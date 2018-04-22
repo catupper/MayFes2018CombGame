@@ -51,6 +51,7 @@ class Board
     } else {
       text("You Win!", width/2, height/2);
     }
+    game++;
   }
 
   //初期配置
