@@ -502,10 +502,10 @@ class Field {
 
 		endSelected = fetchVertex(position);	// 終点にある頂点を取ってくる
 		startSelected.disconnect();				// いったん始点の接続を切っておく
-		Vector2D end = endSelected.getPosition();
 
 		/* もし頂点が存在したなら */
-		if (end != null) {
+		if (endSelected != null) {
+			Vector2D end = endSelected.getPosition();
 			curveActive.terminate(end); 		// 頂点の座標で終端する(当たり判定に抜けが出ないように)
 
 			/* TODO: ここで衝突判定するの絶対おかしいんだよなあ */
