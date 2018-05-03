@@ -1,26 +1,44 @@
-/* Aquarius 2018/04/30 */
+/* Aquarius 2018/05/03 */
 import java.util.*;
 
 /* TODO:
  * 線分を増やす(これないとゲームじゃない)
  * 終了判定
+ * 画面外に出たときの処理
  *
- * 衝突判定あたりの設計の見直し
  * 判定がシビア && コーナーケースが多い
  * 新しく作った線分が元ある曲線にぶつかったらどうするの
- * せっかく Line があるので最大限に活用する
  */
+
+static class Constant {
+	static final int initialDepthVertex = 10000;
+	static final int initialDepthCurve = 0;
+	static final int initialDepthCurveActive = 1000;
+	static final int initialDepthCollision = 100000;
+}
+
+static int colorRef(int r, int g, int b, int a) {
+	if (r < 0 || r >= 256) throw new IllegalArgumentException();
+	if (g < 0 || g >= 256) throw new IllegalArgumentException();
+	if (b < 0 || b >= 256) throw new IllegalArgumentException();
+	if (a < 0 || a >= 256) throw new IllegalArgumentException();
+	return (a << 24) | (r << 16) | (g << 8) | b;
+}
+
+static int colorRef(int r, int g, int b) {
+	return colorRef(r, g, b, 255);
+}
 
 /*-----------------------------*/
 /*------ -  Vector2D   --------*/
 /*-----------------------------*/
 
 /* int 型の2次元ベクトル (immutable) */
-class Vector2D {
+static class Vector2D {
 	final int x;
 	final int y;
 
-	Vector2D (int x_, int y_) {
+	Vector2D(int x_, int y_) {
 		x = x_;
 		y = y_;
 	}
@@ -39,6 +57,14 @@ class Vector2D {
 
 	Vector2D sub(Vector2D right) {
 		return new Vector2D(x() - right.x(), y() - right.y());
+	}
+
+	Vector2D mul(float scalar) {
+		return new Vector2D((int)(x() * scalar), (int)(y() * scalar));
+	}
+
+	Vector2D div(float scalar) {
+		return new Vector2D((int)(x() / scalar), (int)(y() / scalar));
 	}
 
 	/* 内積 */
@@ -66,15 +92,15 @@ class Vector2D {
 }
 
 /*-----------------------------*/
-/*---------   Line   ----------*/
+/*--------   Segment   --------*/
 /*-----------------------------*/
 
 /* 線分 (immutable) */
-class Line {
+static class Segment {
 	final Vector2D start;
 	final Vector2D end;
 
-	Line(Vector2D start_, Vector2D end_) {
+	Segment(Vector2D start_, Vector2D end_) {
 		start = start_;
 		end = end_;
 	}
@@ -108,10 +134,26 @@ static class MathUtility {
 		return 0;
 	}
 
-	/* 直線(as at) と 直線(bs bt) が交差している(端点での衝突は含まない)  */
-	static boolean intersects(Vector2D as, Vector2D at, Vector2D bs, Vector2D bt) {
-		return ccw(as, at, bs) * ccw(as, at, bt) < 0
-		    && ccw(bs, bt, as) * ccw(bs, bt, at) < 0;
+	/* 2つの線分が交差しているかどうか(端点での衝突は含まない)  */
+	static boolean intersects(Segment a, Segment b) {
+		return ccw(a.start(), a.end(), b.start()) * ccw(a.start(), a.end(), b.end()) < 0
+		    && ccw(b.start(), b.end(), a.start()) * ccw(b.start(), b.end(), a.end()) < 0;
+	}
+
+	/* 2つの直線の交点(なくても無理やり返す); 交点座標は(分数になることもあるが)整数に丸める  */
+	static Vector2D intersectionPoint(Segment a, Segment b) {
+		Vector2D p = a.start();
+		Vector2D q = a.end();
+		Vector2D r = b.start();
+		Vector2D s = b.end();
+
+		Vector2D vec_a = new Vector2D(p.y() - q.y(), r.y() - s.y());
+		Vector2D vec_b = new Vector2D(q.x() - p.x(), s.x() - r.x());
+		Vector2D vec_c = new Vector2D(p.cross(q), r.cross(s));
+		int det = vec_a.cross(vec_b);
+
+		if (det == 0) return p;  	// 2つの直線が平行のとき: 適当に返しておく
+		return new Vector2D(vec_b.cross(vec_c) / det, vec_c.cross(vec_a) / det);
 	}
 }
 
@@ -120,7 +162,7 @@ static class MathUtility {
 /*-----------------------------*/
 
 /* 曲線を一定の長さ引くごとにそれを教えてくれるクラス */
-class TimerForCurve {
+static class TimerForCurve {
 	final float interval;		// 距離間隔
 	double sumDistance;			// これが interval 以上になると知らせる
 	Vector2D prevPosition;		// 前フレームにおける位置
@@ -152,8 +194,8 @@ class TimerForCurve {
 /*------   Displayable   ------*/
 /*-----------------------------*/
 
-/* 描画したいオブジェクトの基底クラス, TODO: 深度を実装 */
-interface Displayable {
+/* 描画したいオブジェクトの基底クラス */
+static interface Displayable {
 	void display();
 }
 
@@ -162,21 +204,33 @@ interface Displayable {
 /*-----------------------------*/
 
 /* 追加された Displayable オブジェクトを描画する */
+/* 深度は大きいほうが前 */
 static class Displayer {
-	static HashSet<Displayable> objects = new HashSet<Displayable>();
+	static Map<Displayable, Integer> objToDepth = new HashMap<Displayable, Integer>();
+	static Map<Integer, ArrayList<Displayable>> map = new TreeMap<Integer, ArrayList<Displayable>>();
 
 	static void update() {
-		for (Displayable object : objects) {
-			object.display();
+		for (Map.Entry<Integer, ArrayList<Displayable>> entry : map.entrySet()) {
+			for (Displayable object : entry.getValue()) {
+				object.display();
+			}
 		}
 	}
 
-	static void add(Displayable object) {
-		objects.add(object);
+	static void add(Displayable object, int depth) {
+		objToDepth.put(object, depth);
+		if (map.get(depth) == null) {
+			map.put(depth, new ArrayList<Displayable>());
+		}
+		map.get(depth).add(object);
 	}
 
 	static void remove(Displayable object) {
-		objects.remove(object);
+		Integer depth = objToDepth.get(object);
+		if (depth == null) return;
+
+		objToDepth.remove(object);
+		map.get(depth).remove(object);
 	}
 }
 
@@ -187,15 +241,18 @@ static class Displayer {
 /* 描画する際にはこれらの関数を使うこと; static class になっていないのは processing の制限による */
 class DrawingTools {
 	/* 線分を描く */
-	void drawLine(Vector2D from, Vector2D to, color col) {
+	void drawLine(Segment segment, color col) {
 		final int weight = 3;
 		strokeWeight(weight);
 		stroke(col);
+
+		Vector2D from = segment.start();
+		Vector2D to = segment.end();
 		line(from.x(), from.y(), to.x(), to.y());
 	}
 
-	void drawLine(Vector2D from, Vector2D to) {
-   		drawLine(from, to, color(0, 0, 0));
+	void drawLine(Segment segment) {
+   		drawLine(segment, colorRef(0, 0, 0));
 	}
 
 	/* 円を描く */
@@ -206,7 +263,7 @@ class DrawingTools {
 	}
 
 	void drawCircle(Vector2D position, float radius) {
-	   	drawCircle(position, radius, color(0, 0, 0));
+	   	drawCircle(position, radius, colorRef(0, 0, 0));
 	}
 }
 
@@ -217,7 +274,7 @@ class DrawingTools {
 static final int degreeMax = 1;		// 1頂点から伸ばせる線の最大数
 
 /* 頂点の状態 */
-enum VertexState {
+static enum VertexState {
 	Locked,		// 次数最大
 	Unlocked,	// 次数にまだ余裕がある(かつマウスが乗っていない)
 	MouseOver	// 次数にまだ余裕があり、マウスが乗っている
@@ -228,7 +285,7 @@ class Vertex implements Displayable {
 	final int radius = 14;		// 円の半径(描画用)
 	Vector2D position;			// 中心位置
 	int degree;					// 現在この頂点から伸びている線の本数(次数)
-	VertexState state;			// 状態
+	VertexState state = VertexState.Unlocked;	// 状態
 
 	Vertex(Vector2D position_) {
 		position = position_;
@@ -252,9 +309,9 @@ class Vertex implements Displayable {
 	}
 
 	void display() {
-		final color lockedColor = color(224, 0, 0);			// 限界次数の頂点の色
-		final color unlockedColor = color(0, 0, 224);		// 次数が限界に達していない頂点の色
-		final color mouseOverColor = color(112, 112, 255);	// 次数が限界に達していない頂点のマウスオーバー時の色
+		final color lockedColor = colorRef(224, 0, 0);			// 限界次数の頂点の色
+		final color unlockedColor = colorRef(0, 0, 224);		// 次数が限界に達していない頂点の色
+		final color mouseOverColor = colorRef(112, 112, 255);	// 次数が限界に達していない頂点のマウスオーバー時の色
 
 		switch (state) {
 		case Locked:
@@ -304,27 +361,30 @@ class Vertex implements Displayable {
 /*-----------------------------*/
 
 /* 固定化された曲線 */
-class Curve implements Displayable {
-	ArrayList<Vector2D> points;		 // 曲線の中継点 TODO: ArrayList<Line> にするといい
+class Curve implements Displayable, Iterable<Segment> {
+	ArrayList<Segment> segments;		// 線分の配列(各線分は接続している)
 
-	Curve(ArrayList<Vector2D> points_) {
-		points = points_;
+	Curve(ArrayList<Segment> segments_) {
+		segments = segments_;
 	}
 
 	/* 折れ線のセグメント数 */
 	int size() {
-		return points.size() - 1;
+		return segments.size();
 	}
 
-	/* index 番目の線分を取得 */
-	Line getSegment(int index) {
-		if (index >= points.size() - 1) throw new IndexOutOfBoundsException();
-		return new Line(points.get(index), points.get(index + 1));
+	/* 曲線中央に位置する線分を取得(新しい頂点を作るための線分); */
+ 	Segment getCenterSegment() {
+		return segments.get(segments.size() / 2);
+	}
+
+	Iterator<Segment> iterator() {
+		return segments.iterator();
 	}
 
 	void display() {
-		for (int i = 0; i < points.size() - 1; ++i) {
-			drawingTools.drawLine(points.get(i), points.get(i + 1));
+		for (Segment segment : segments) {
+			drawingTools.drawLine(segment);
 		}
 	}
 }
@@ -333,103 +393,230 @@ class Curve implements Displayable {
 /*------   CurveActive   ------*/
 /*-----------------------------*/
 
-/* 描いている途中の曲線; TODO: ふつう直線と色がセットになっているものでは */
-class CurveActive implements Displayable {
-	ArrayList<Vector2D> points = new ArrayList<Vector2D>();	// 曲線の中継点(始点, 終点含む)
-	ArrayList<Boolean> collides = new ArrayList<Boolean>();	// 各線分が他の曲線に交差しているかどうか
-	TimerForCurve timer = null;
+/* 現在描いている途中の曲線 */
+class CurveActive implements Displayable, Iterable<Segment> {
+	ArrayList<Segment> segments = new ArrayList<Segment>();
+	Vector2D last;					// 現在終点となっている座標
+	TimerForCurve timer;
+	boolean isUpdated = false;		// 線分が追加されたかどうか
 
 	CurveActive(Vector2D start) {
 		final int interval = 12;	// 距離 interval ごとに曲線を線分に分割
-		points.add(start);
-		collides.add(false);
+		last = start;
 		timer = new TimerForCurve(start, interval);
+	}
+
+	Iterator<Segment> iterator() {
+		return segments.iterator();
+	}
+
+	/* 曲線に点 point を追加する */
+	void extend(Vector2D point) {
+		Segment newSegment = new Segment(last, point);
+		segments.add(newSegment);
+		last = point;
+		isUpdated = true;
 	}
 
 	/* マウスの現在位置を更新(毎フレーム実行) */
 	void setCurrent(Vector2D point) {
 		timer.update(point);
 		if (timer.elapsed()) {		// 曲線が累計で一定の長さ以上になったときだけ点を追加
-			points.add(point);
-			collides.add(false);
+			extend(point);
 		}
 	}
 
-	/* 直線を終端する(当たり判定の調整) */
+	/* 曲線を終端する(当たり判定の調整) */
 	void terminate(Vector2D point) {
-		points.add(point);
-		collides.add(false);
+		extend(point);		// 累積距離にかかわらず追加する
 	}
 
-	/* Curve に変換できるかどうか(すなわち他の曲線と交差していないか) */
-	boolean canBeSolidified() {
-		for (boolean col : collides) {
-			if (col) {
-				return false;
-			}
+	boolean isUpdated(){
+		if (isUpdated) {
+			isUpdated = false;
+			return true;
 		}
-		return true;
-	}
-
-	/* curve と交差しているなら collides を更新する;
-	   毎フレーム, すべての曲線に対してこのメソッドを呼ぶ;
-	   TODO: もうちょっといい設計ないもんかねえ */
-	void collideWith(Curve curve) {
-		for (int i = 0; i < points.size() - 1; ++i) {
-			Vector2D as = points.get(i);
-			Vector2D at = points.get(i + 1);
-
-			for (int j = 0; j < curve.size(); ++j) {
-				Line segment = curve.getSegment(j);
-				Vector2D bs = segment.start();
-				Vector2D bt = segment.end();
-				if (MathUtility.intersects(as, at, bs, bt)) {		// 他の曲線と衝突している
-					collides.set(i, true);
-				}
-			}
-		}
-	}
-
-	/* 自分自身と交差しているなら collides を更新する;
-	   毎フレームこのメソッドを呼ぶ */
-	void collideWithItself() {
-		for (int i = 0; i < points.size() - 1; ++i) {
-			Vector2D as = points.get(i);
-			Vector2D at = points.get(i + 1);
-
-			for (int j = 0; j < points.size() - 1; ++j) {
-				if (abs(i - j) <= 1) continue;		// 隣接する線分が衝突しているのは当然なので飛ばす
-
-				Vector2D bs = points.get(j);
-				Vector2D bt = points.get(j + 1);
-				if (MathUtility.intersects(as, at, bs, bt)) {	// 自分自身と衝突している
-					collides.set(i, true);
-				}
-			}
-		}
+		return false;
 	}
 
 	/* CurveActive を Curve に変換する(コード内ではこの意味で動詞 'solidify' を使うことにする) */
 	Curve solidify(Vector2D end) {
-		if (!canBeSolidified()) throw new IllegalStateException();
-		points.add(end);
-		return new Curve(points);
+		return new Curve(segments);
+	}
+
+	Segment getLastSegment() {
+		if (segments.size() == 0) return null;
+		return segments.get(segments.size() - 1);
 	}
 
 	void display() {
-		final color colorOk = color(128, 128, 128);		// デフォルトの色
-		final color colorNg = color(224, 0, 0);			// 交差している部分の色
-
-		for (int i = 0; i < points.size() - 1; ++i) {
-			color curveColor;
-			if (collides.get(i)) {
-				curveColor = colorNg;
-			} else {
-				curveColor = colorOk;
-			}
-
-			drawingTools.drawLine(points.get(i), points.get(i + 1), curveColor);
+		final color col = colorRef(128, 128, 128);
+		for (Segment segment : segments) {
+			drawingTools.drawLine(segment, col);
 		}
+	}
+}
+
+/*-----------------------------*/
+/*-------   FieldData   -------*/
+/*-----------------------------*/
+
+/* フィールド上のオブジェクトの集まり; TODO: クラス名変更 */
+static class FieldData {
+	ArrayList<Vertex> vertices = new ArrayList<Vertex>();	// 頂点の集合
+	ArrayList<Curve> curves = new ArrayList<Curve>();		// 直線の集合
+	CurveActive curveActive = null;							// 描き途中の曲線
+
+	static int depthVertex = Constant.initialDepthVertex;
+	static int depthCurve = Constant.initialDepthCurve;
+	static int depthCurveActive = Constant.initialDepthCurveActive;
+
+	/* 頂点を追加 */
+	void addVertex(Vertex vertex) {
+		vertices.add(vertex);
+		Displayer.add(vertex, depthVertex);
+		++depthVertex;
+	}
+
+	/* 曲線を追加 */
+	void addCurve(Curve curve) {
+		curves.add(curve);
+		Displayer.add(curve, depthCurve);
+		++depthCurve;
+	}
+
+	/* 描き途中の曲線をセット */
+	void setCurveActive(CurveActive curveActive_) {
+		curveActive = curveActive_;
+		Displayer.add(curveActive, depthCurveActive);
+	}
+
+	/* 描き途中の曲線を削除 */
+	void resetCurveActive() {
+		Displayer.remove(curveActive);
+		curveActive = null;
+	}
+
+	CurveActive getCurveActive() {
+		return curveActive;
+	}
+
+	/* position に存在する頂点を(高々1つ)返す; なければ null を返す */
+	Vertex fetchVertex(Vector2D position) {
+		for (Vertex vertex : vertices) {
+			if (vertex.isLocked()) continue;		// 次数限界の点は選ばない
+			if (vertex.includes(position)) {
+				return vertex;
+			}
+		}
+		return null;
+	}
+
+	void update() {
+		/* 各頂点を更新(頂点の色を変えるのに必要) */
+		for (Vertex vertex : vertices) {
+			vertex.update();
+		}
+	}
+
+	/* 曲線を格納したコレクションを返す;
+	   TODO: コレクションを丸ごと返すのは変なのだが、楽なので */
+	ArrayList<Curve> getCurves() {
+		return curves;
+	}
+}
+
+
+/*-----------------------------*/
+/*-------   Collision   -------*/
+/*-----------------------------*/
+
+class Collision implements Displayable {
+	Vector2D position;	// 衝突位置
+	final int radius = 8;
+
+	Collision(Vector2D position_) {
+		position = position_;
+		//Displayer.add(this, depthCollision);
+		//++depthCollision;
+	}
+
+	void display() {
+		final color col = colorRef(64, 192, 192);
+		drawingTools.drawCircle(position, radius, col);
+	}
+}
+
+/*-----------------------------*/
+/*---   CollisionDetector   ---*/
+/*-----------------------------*/
+
+/* 線分の交差が起きている場所をすべて返すようなクラス */
+/* TODO: 累計とフレーム差分の両方が返せるように工夫しよう(必要ないかも?) */
+static int depthCollision = Constant.initialDepthCollision;
+class CollisionDetector {
+	FieldData data;
+	ArrayList<Collision> collisions = new ArrayList<Collision>();
+
+	CollisionDetector(FieldData data_) {
+		data = data_;
+	}
+
+	void update() {
+		updateCollision();
+	}
+
+	/* (現フレームで)新たに増えた衝突点を取得する */
+	private ArrayList<Vector2D> getNewCollisionPoints() {
+		ArrayList<Vector2D> list = new ArrayList<Vector2D>();
+		CurveActive curveActive = data.getCurveActive();
+
+		if (curveActive == null) return list;
+		if (!curveActive.isUpdated()) return list;			// curveActive が変化していないなら 衝突点も増えていない
+		Segment subject = curveActive.getLastSegment();		// 最後に追加された辺だけを判定する
+
+		/* curves との交差判定 */
+		for (Curve curve : data.getCurves()) {
+			for (Segment object : curve) {
+				if (MathUtility.intersects(subject, object)) {
+					Vector2D intersectionPoint = MathUtility.intersectionPoint(subject, object);
+					list.add(intersectionPoint);
+				}
+			}
+		}
+
+		/* curveActive との交差判定 */
+		for (Segment object : curveActive) {
+			if (MathUtility.intersects(subject, object)) {
+				Vector2D intersectionPoint = MathUtility.intersectionPoint(subject, object);
+				list.add(intersectionPoint);
+			}
+		}
+
+		return list;
+	}
+
+	private void updateCollision() {
+		for (Vector2D point : getNewCollisionPoints()) {
+			Collision collision = new Collision(point);
+			collisions.add(collision);
+			Displayer.add(collision, depthCollision);
+			++depthCollision;
+		}
+
+		/* curveActive がなくなったら衝突点も消える */
+		if (data.getCurveActive() == null) {
+			for (Collision collision : collisions) {
+				Displayer.remove(collision);
+			}
+			collisions.clear();
+		}
+	}
+
+	/* 交差している点があるかどうか */
+	boolean collisionExists() {
+		updateCollision();
+		return collisions.size() != 0;
 	}
 }
 
@@ -437,55 +624,44 @@ class CurveActive implements Displayable {
 /*---------   Field   ---------*/
 /*-----------------------------*/
 
-/* フィールド,
-  TODO: 現在は Field クラスが線を作っていたりと「フィールド」の役割を超えることをしているが、
-  		あとでその名の通り public Field としての役割に限定する */
+/* フィールド */
 class Field {
-	ArrayList<Vertex> vertices = new ArrayList<Vertex>();		// 頂点の集合
-	ArrayList<Curve> curves = new ArrayList<Curve>();			// 直線の集合
+	FieldData data;
+	CollisionDetector collisionDetector;
 	CurveActive curveActive = null;		// 描き途中の曲線
 	Vertex startSelected = null;		// curveActive の始点
 	Vertex endSelected = null;			// curveActive の終点
 
+	Field(FieldData data_, CollisionDetector collisionDetector_) {
+		data = data_;
+		collisionDetector = collisionDetector_;
+	}
 
 	/* 頂点を追加 */
 	void addVertex(Vector2D position) {
 		Vertex vertex = new Vertex(position);
-		vertices.add(vertex);
-		Displayer.add(vertex);
+		data.addVertex(vertex);
 	}
 
 	/* 曲線を追加(追加時には交差判定は行われない) */
-	void addCurve(ArrayList<Vector2D> points) {
-		Curve curve = new Curve(points);
-		curves.add(curve);
-		Displayer.add(curve);
+	void addCurve(ArrayList<Segment> segments) {
+		Curve curve = new Curve(segments);
+		data.addCurve(curve);
 	}
 
 	void update() {
-		Vector2D position = new Vector2D(mouseX, mouseY);
-		for (Vertex vertex : vertices) {
-			/* 各頂点を更新 */
-			vertex.update();
-		}
-
-		/* curveActive が存在するなら交差判定をする */
-		if (curveActive != null) {
-			curveActive.collideWithItself();
-			for (Curve curve : curves) {
-				curveActive.collideWith(curve);
-			}
-		}
+		data.update();
 	}
 
 	/* 新しい直線を描き始める */
 	void startDrawing(Vector2D position) {
-		startSelected = fetchVertex(position);		//クリックした場所にある頂点を取ってくる
+		startSelected = data.fetchVertex(position);		//クリックした場所にある頂点を取ってくる
 		if (startSelected == null) return;
+
 		Vector2D start = startSelected.getPosition();
 
 		curveActive = new CurveActive(start);		// その頂点から直線を引き始める
-		Displayer.add(curveActive);
+		data.setCurveActive(curveActive);
 
 		startSelected.connect();					// 頂点の次数を増やす
 	}
@@ -496,52 +672,62 @@ class Field {
 		curveActive.setCurrent(position);		// 描き途中の直線を更新
 	}
 
-	/* 直線を描き終える; TODO: 明らかにややこしすぎる */
+	/* 直線を描き終える */
 	void endDrawing(Vector2D position) {
 		if (curveActive == null) return;		// そもそも curveActive がないなら終了
 
-		endSelected = fetchVertex(position);	// 終点にある頂点を取ってくる
-		startSelected.disconnect();				// いったん始点の接続を切っておく
+		endSelected = data.fetchVertex(position);	// 終点にある頂点を取ってくる
+		startSelected.disconnect();					// いったん始点の接続を切っておく
 
 		/* もし頂点が存在したなら */
 		if (endSelected != null) {
 			Vector2D end = endSelected.getPosition();
 			curveActive.terminate(end); 		// 頂点の座標で終端する(当たり判定に抜けが出ないように)
 
-			/* TODO: ここで衝突判定するの絶対おかしいんだよなあ */
-			curveActive.collideWithItself();
-			for (Curve curve : curves) {
-				curveActive.collideWith(curve);
-			}
-
 			/* 他の曲線と交差していなければ curveActive を solidify する */
-			if (curveActive.canBeSolidified()) {
+			if (!collisionDetector.collisionExists()) {
 				Curve curve = curveActive.solidify(end);
-				curves.add(curve);
-				Displayer.add(curve);
+				data.addCurve(curve);
 
 				/* 両端点を接続 */
 				startSelected.connect();
 				endSelected.connect();
+
+				/* 新しいマーカーを作る */
+				createNewMarker(curve.getCenterSegment());
 			}
 		}
 
 		/* curveActive を消去 */
-		Displayer.remove(curveActive);
+		data.resetCurveActive();
 		curveActive = null;
 		startSelected = null;
 		endSelected = null;
 	}
 
-	/* position に存在する頂点を(高々1つ)返す; なければ null を返す */
-	private Vertex fetchVertex(Vector2D position) {
-		for (Vertex vertex : vertices) {
-			if (vertex.isLocked()) continue;		// 次数限界の点は選ばない
-			if (vertex.includes(position)) {
-				return vertex;
-			}
-		}
-		return null;
+	/* 曲線の1セグメントを受け取り, それに直交するように線を引いて新しいマーカーを作る */
+	private void createNewMarker(Segment segment) {
+		final int radius = 20;		// マーカーの大きさ
+
+		Vector2D a = segment.start();
+		Vector2D b = segment.end();
+
+		Vector2D midPoint = a.add(b).div(2);		// 中点
+		Vector2D vector = b.sub(a);					// 線分を有向線分と思ったときのベクトル
+		Vector2D normal = new Vector2D(-vector.y(), vector.x());		// 法線ベクトル
+		Vector2D normalModified = normal.mul(radius / normal.norm());	// 長さを調整した法線ベクトル
+
+		/* 新しい線分の位置を決定 */
+		Vector2D newA = midPoint.add(normalModified);
+		Vector2D newB = midPoint.sub(normalModified);
+		Segment newSegment = new Segment(newA, newB);
+
+		/* 新しいマーカーを作る */
+		addVertex(newA);
+		addVertex(newB);
+		ArrayList<Segment> list = new ArrayList<Segment>();
+		list.add(newSegment);
+		addCurve(list);
 	}
 }
 
@@ -551,14 +737,22 @@ class Field {
 
 /* ゲーム全体をつかさどる(TODO: ほんまか?) */
 class GameManager {
-	Field field = new Field();
+	FieldData data;
+	CollisionDetector collisionDetector;
+	Field field;
 	ArrayList<Vector2D> markerPositions = new ArrayList<Vector2D>();	// 十字型マーカーの位置
+
+	GameManager() {
+		data = new FieldData();
+		collisionDetector = new CollisionDetector(data);
+		field = new Field(data, collisionDetector);
+	}
 
 	/* 十字型マーカーの位置を決める */
 	void decideMarkerPositions() {
 		Vector2D center = new Vector2D(width / 2, height / 2);		// 中心
 		Vector2D circle = new Vector2D(width / 3, height / 3);		// 楕円半径
-		final int markerMax = 5;		// マーカー数
+		final int markerMax = 3;		// マーカー数
 		final int uncertainty = 30;		// ゆらぎ
 
 		for (int i = 0; i < markerMax; ++i) {
@@ -591,8 +785,10 @@ class GameManager {
 			field.addVertex(top);
 			field.addVertex(bottom);
 
-			ArrayList<Vector2D> vertical = new ArrayList<Vector2D>(Arrays.asList(left, right));
-			ArrayList<Vector2D> horizontal = new ArrayList<Vector2D>(Arrays.asList(top, bottom));
+			ArrayList<Segment> vertical = new ArrayList<Segment>();
+			ArrayList<Segment> horizontal = new ArrayList<Segment>();
+			vertical.add(new Segment(left, right));
+			horizontal.add(new Segment(top, bottom));
 			field.addCurve(vertical);
 			field.addCurve(horizontal);
 		}
@@ -611,6 +807,7 @@ class GameManager {
 			field.drag(mousePosition);
 		}
 		field.update();
+		collisionDetector.update();
 	}
 
 	/* マウスが押された瞬間 */
@@ -649,12 +846,12 @@ Printf printf = new Printf();
 DrawingTools drawingTools = new DrawingTools();
 
 void setup() {
-	size(1280, 960);
+	size(960, 640);
 	colorMode(RGB, 256);		// RGB 256 階調で色設定を与える
 
 	/* 初期化 */
 	gameManager.initialize();
-	Displayer.add(printf);
+	Displayer.add(printf, 100000000);
 }
 
 void draw() {
