@@ -1,4 +1,3 @@
-/* Aquarius 2018/05/03 */
 import java.util.*;
 
 /* TODO:
@@ -396,13 +395,10 @@ class Curve implements Displayable, Iterable<Segment> {
 class CurveActive implements Displayable, Iterable<Segment> {
 	ArrayList<Segment> segments = new ArrayList<Segment>();
 	Vector2D last;					// 現在終点となっている座標
-	TimerForCurve timer;
 	boolean isUpdated = false;		// 線分が追加されたかどうか
 
 	CurveActive(Vector2D start) {
-		final int interval = 12;	// 距離 interval ごとに曲線を線分に分割
 		last = start;
-		timer = new TimerForCurve(start, interval);
 	}
 
 	Iterator<Segment> iterator() {
@@ -415,14 +411,6 @@ class CurveActive implements Displayable, Iterable<Segment> {
 		segments.add(newSegment);
 		last = point;
 		isUpdated = true;
-	}
-
-	/* マウスの現在位置を更新(毎フレーム実行) */
-	void setCurrent(Vector2D point) {
-		timer.update(point);
-		if (timer.elapsed()) {		// 曲線が累計で一定の長さ以上になったときだけ点を追加
-			extend(point);
-		}
 	}
 
 	/* 曲線を終端する(当たり判定の調整) */
@@ -624,13 +612,21 @@ class CollisionDetector {
 class Judge {
 	FieldData data;
 	CollisionDetector collisionDetector;
+	GameManager gameManager;		// コールバック用
+
+	/* CurveActive に関する状態 */
 	CurveActive curveActive = null;		// 描き途中の曲線
 	Vertex startSelected = null;		// curveActive の始点
 	Vertex endSelected = null;			// curveActive の終点
 
-	Judge(FieldData data_, CollisionDetector collisionDetector_) {
+	final int markerMax = 2;	// マーカー数
+	final int turnMax = 5 * markerMax - 2;		// このゲームが結局何ターンで終了してしまうか
+	int turnCount = 0;			// 現在のターン数
+
+	Judge(FieldData data_, CollisionDetector collisionDetector_, GameManager gameManager_) {
 		data = data_;
 		collisionDetector = collisionDetector_;
+		gameManager = gameManager_;
 		initialize();
 	}
 
@@ -646,7 +642,6 @@ class Judge {
 		int windowHeight = height;
 		Vector2D center = new Vector2D(windowWidth / 2, windowHeight / 2);		// 中心
 		Vector2D circle = new Vector2D(windowWidth / 3, windowHeight / 3);		// 楕円半径
-		final int markerMax = 3;		// マーカー数
 		final int uncertainty = 30;		// ゆらぎ
 
 		ArrayList<Vector2D> markerPositions = new ArrayList<Vector2D>();
@@ -706,9 +701,13 @@ class Judge {
 
 	void update() {
 		data.update();
+
+		if (turnMax == turnCount) {
+			printf.set("The game has finished.");
+		}
 	}
 
-	/* 新しい直線を描き始める */
+	/* 新しい曲線を描き始める */
 	void startDrawing(Vector2D position) {
 		startSelected = data.fetchVertex(position);		//クリックした場所にある頂点を取ってくる
 		if (startSelected == null) return;
@@ -721,10 +720,10 @@ class Judge {
 		startSelected.connect();						// 頂点の次数を増やす
 	}
 
-	/* ドラッグ中, TODO: メソッド名なんやねん */
-	void drag(Vector2D position) {
+	/* 曲線の中継点を置く */
+	void putRelayPoint(Vector2D position) {
 		if (curveActive == null) return;
-		curveActive.setCurrent(position);		// 描き途中の直線を更新
+		curveActive.extend(position);		// 描き途中の直線を更新
 	}
 
 	/* 直線を描き終える */
@@ -741,6 +740,7 @@ class Judge {
 
 			/* 他の曲線と交差していなければ curveActive を solidify する */
 			if (!collisionDetector.collisionExists()) {
+				/* ターン終了! */
 				Curve curve = curveActive.solidify(end);
 				data.addCurve(curve);
 
@@ -750,6 +750,7 @@ class Judge {
 
 				/* 新しいマーカーを作る */
 				createNewMarker(curve.getCenterSegment());
+				++turnCount;
 			}
 		}
 
@@ -792,14 +793,20 @@ class Judge {
 
 interface Player {
 	void update();
+	void activate();
+	void deactivate();
 }
 
 /*-----------------------------*/
 /*---------   Human   ---------*/
 /*-----------------------------*/
 
+/* 人力操作するプレイヤー; マウス入力を受け取り、適切なコマンドを Judge に与える
+   (曲線の中継点の間引きはここで行うことにした) */
 class Human implements Player {
 	Judge judge;
+	TimerForCurve timer;
+	boolean isActive = false;
 
 	Human(Judge judge_) {
 		judge = judge_;
@@ -807,21 +814,43 @@ class Human implements Player {
 
 	/* 毎フレーム更新(press, release はこれとは別に割り込みで判定) */
 	void update() {
+		if (!isActive) return;
 		if (mousePressed) {
+			if (timer == null) return;	// timer が null なら何もしない(マウスクリック後に active になると起こりうる);
+										// TODO: timer 以外の状態を持って判定すべき?
 			Vector2D mousePosition = new Vector2D(mouseX, mouseY);
-			judge.drag(mousePosition);
+
+			timer.update(mousePosition);
+			if (timer.elapsed()) {		// 一定の長さ以上動かしたときだけ点を追加
+				judge.putRelayPoint(mousePosition);
+			}
 		}
 	}
 
 	/* マウスが押された瞬間 */
 	void mouseIsPressed(Vector2D position) {
+		if (!isActive) return;
 		judge.startDrawing(position);
+
+		final int interval = 15;	// マウスが累計で interval の長さ動くごとに点を追加する
+		timer = new TimerForCurve(position, interval);
 	}
 
 	/* マウスが離された瞬間 */
 	void mouseIsReleased(Vector2D position) {
+		if (!isActive) return;
 		judge.endDrawing(position);
+		timer = null;
 	}
+
+	void activate() {
+		isActive = true;
+	}
+
+	void deactivate() {
+		isActive = false;
+	}
+
 }
 
 /*-----------------------------*/
@@ -833,22 +862,51 @@ class GameManager {
 	FieldData data;
 	CollisionDetector collisionDetector;
 	Judge judge;
-	Player player;
+	final Player first;		// 先手
+	final Player second;	// 後手
+
+	Player active;
+	Player inactive;
+
+	int turn = 0;		// 何人目のターンか (0-based)
 
 	GameManager() {
 		data = new FieldData();
 		collisionDetector = new CollisionDetector(data);
-		judge = new Judge(data, collisionDetector);
+		judge = new Judge(data, collisionDetector, this);
 
-		Human human = new Human(judge);
-		player = human;
-		humanToReceiveMouseEvent = human;
+		Human firstHuman = new Human(judge);
+		Human secondHuman = new Human(judge);
+		first = firstHuman;
+		second = secondHuman;
+		humansToReceiveMouseEvents.add(firstHuman);
+		humansToReceiveMouseEvents.add(secondHuman);
+
+		active = first;
+		inactive = second;
+
+		inactive.deactivate();
+		active.activate();
+	}
+
+	void nextTurn() {
+		Player tmp = active;
+		inactive = tmp;
+		active = inactive;
+
+		inactive.deactivate();
+		active.activate();
 	}
 
 	void update() {
 		judge.update();
 		collisionDetector.update();
-		player.update();
+		active.update();
+		inactive.update();
+	}
+
+	void informEndOfTurn() {
+		nextTurn();
 	}
 }
 
@@ -865,6 +923,10 @@ class Printf implements Displayable {
 	}
 
 	void display() {
+		final color col = color(0, 0, 0);
+		fill(col);
+		textSize(32);
+
 		text(str, 50, 50);
 	}
 }
@@ -875,10 +937,10 @@ GameManager gameManager;
 /* static class にできないためにグローバルにおいている変数 */
 Printf printf = new Printf();
 DrawingTools drawingTools = new DrawingTools();
-Human humanToReceiveMouseEvent;		// TODO: とりあえずマウス入力を受け取るためにここに human を置いておきます
+ArrayList<Human> humansToReceiveMouseEvents = new ArrayList<Human>();		// TODO: とりあえずマウス入力を受け取るためにここに human を置いておきます
 
 void setup() {
-	size(960, 640);
+	size(960, 720);
 	colorMode(RGB, 256);		// RGB 256 階調で色設定を与える
 
 	/* 初期化 */
@@ -895,10 +957,14 @@ void draw() {
 
 void mousePressed() {
 	Vector2D mousePosition = new Vector2D(mouseX, mouseY);
-	humanToReceiveMouseEvent.mouseIsPressed(mousePosition);
+	for(Human human : humansToReceiveMouseEvents) {
+		human.mouseIsPressed(mousePosition);
+	}
 }
 
 void mouseReleased() {
 	Vector2D mousePosition = new Vector2D(mouseX, mouseY);
-	humanToReceiveMouseEvent.mouseIsReleased(mousePosition);
+	for(Human human : humansToReceiveMouseEvents) {
+		human.mouseIsReleased(mousePosition);
+	}
 }
