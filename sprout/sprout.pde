@@ -2,7 +2,6 @@
 import java.util.*;
 
 /* TODO:
- * 線分を増やす(これないとゲームじゃない)
  * 終了判定
  * 画面外に出たときの処理
  *
@@ -461,7 +460,7 @@ class CurveActive implements Displayable, Iterable<Segment> {
 /*-------   FieldData   -------*/
 /*-----------------------------*/
 
-/* フィールド上のオブジェクトの集まり; TODO: クラス名変更 */
+/* フィールド上のオブジェクトの集まり */
 static class FieldData {
 	ArrayList<Vertex> vertices = new ArrayList<Vertex>();	// 頂点の集合
 	ArrayList<Curve> curves = new ArrayList<Curve>();		// 直線の集合
@@ -526,7 +525,6 @@ static class FieldData {
 	}
 }
 
-
 /*-----------------------------*/
 /*-------   Collision   -------*/
 /*-----------------------------*/
@@ -537,8 +535,6 @@ class Collision implements Displayable {
 
 	Collision(Vector2D position_) {
 		position = position_;
-		//Displayer.add(this, depthCollision);
-		//++depthCollision;
 	}
 
 	void display() {
@@ -621,33 +617,92 @@ class CollisionDetector {
 }
 
 /*-----------------------------*/
-/*---------   Field   ---------*/
+/*---------   Judge   ---------*/
 /*-----------------------------*/
 
-/* フィールド */
-class Field {
+/* ゲームの進行、プレイヤーが正しい操作をしているか判定 */
+class Judge {
 	FieldData data;
 	CollisionDetector collisionDetector;
 	CurveActive curveActive = null;		// 描き途中の曲線
 	Vertex startSelected = null;		// curveActive の始点
 	Vertex endSelected = null;			// curveActive の終点
 
-	Field(FieldData data_, CollisionDetector collisionDetector_) {
+	Judge(FieldData data_, CollisionDetector collisionDetector_) {
 		data = data_;
 		collisionDetector = collisionDetector_;
+		initialize();
+	}
+
+	/* ゲーム開始前の準備 */
+	void initialize() {
+		ArrayList<Vector2D> markerPositions = decideMarkerPositions();
+		locateMarkers(markerPositions);
+	}
+
+	/* 十字型マーカーの位置を決める */
+	private ArrayList<Vector2D> decideMarkerPositions() {
+		int windowWidth = width;
+		int windowHeight = height;
+		Vector2D center = new Vector2D(windowWidth / 2, windowHeight / 2);		// 中心
+		Vector2D circle = new Vector2D(windowWidth / 3, windowHeight / 3);		// 楕円半径
+		final int markerMax = 3;		// マーカー数
+		final int uncertainty = 30;		// ゆらぎ
+
+		ArrayList<Vector2D> markerPositions = new ArrayList<Vector2D>();
+		for (int i = 0; i < markerMax; ++i) {
+			Vector2D diff = new Vector2D(
+				(int)(circle.x() * cos(TWO_PI * i / markerMax - HALF_PI)),
+				(int)(circle.y() * sin(TWO_PI * i / markerMax - HALF_PI))
+			);
+			Vector2D rand = new Vector2D(
+				(int)random(-uncertainty, uncertainty),
+				(int)random(-uncertainty, uncertainty)
+			);
+
+			Vector2D position = center.add(diff).add(rand);
+			markerPositions.add(position);
+		}
+		return markerPositions;
+	}
+
+	/* 十字型マーカーを Judge に配置する */
+	private void locateMarkers(ArrayList<Vector2D> markerPositions) {
+		final int radius = 30;		// マーカーの大きさ
+
+		for (Vector2D markerPosition : markerPositions) {
+			Vector2D left   = markerPosition.add(new Vector2D(-radius, 0));
+			Vector2D right  = markerPosition.add(new Vector2D(radius, 0));
+			Vector2D top    = markerPosition.add(new Vector2D(0, -radius));
+			Vector2D bottom = markerPosition.add(new Vector2D(0, radius));
+
+			addVertex(left);
+			addVertex(right);
+			addVertex(top);
+			addVertex(bottom);
+
+			ArrayList<Segment> vertical = new ArrayList<Segment>();
+			ArrayList<Segment> horizontal = new ArrayList<Segment>();
+			vertical.add(new Segment(left, right));
+			horizontal.add(new Segment(top, bottom));
+			addCurve(vertical);
+			addCurve(horizontal);
+		}
 	}
 
 	/* 頂点を追加 */
-	void addVertex(Vector2D position) {
+	private void addVertex(Vector2D position) {
 		Vertex vertex = new Vertex(position);
 		data.addVertex(vertex);
 	}
 
 	/* 曲線を追加(追加時には交差判定は行われない) */
-	void addCurve(ArrayList<Segment> segments) {
+	private void addCurve(ArrayList<Segment> segments) {
 		Curve curve = new Curve(segments);
 		data.addCurve(curve);
 	}
+
+	/*------ ここからゲーム進行に関わるメソッド ------*/
 
 	void update() {
 		data.update();
@@ -660,10 +715,10 @@ class Field {
 
 		Vector2D start = startSelected.getPosition();
 
-		curveActive = new CurveActive(start);		// その頂点から直線を引き始める
+		curveActive = new CurveActive(start);			// その頂点から直線を引き始める
 		data.setCurveActive(curveActive);
 
-		startSelected.connect();					// 頂点の次数を増やす
+		startSelected.connect();						// 頂点の次数を増やす
 	}
 
 	/* ドラッグ中, TODO: メソッド名なんやねん */
@@ -732,92 +787,68 @@ class Field {
 }
 
 /*-----------------------------*/
-/*------   GameManager   ------*/
+/*--------   Player   ---------*/
 /*-----------------------------*/
 
-/* ゲーム全体をつかさどる(TODO: ほんまか?) */
-class GameManager {
-	FieldData data;
-	CollisionDetector collisionDetector;
-	Field field;
-	ArrayList<Vector2D> markerPositions = new ArrayList<Vector2D>();	// 十字型マーカーの位置
+interface Player {
+	void update();
+}
 
-	GameManager() {
-		data = new FieldData();
-		collisionDetector = new CollisionDetector(data);
-		field = new Field(data, collisionDetector);
-	}
+/*-----------------------------*/
+/*---------   Human   ---------*/
+/*-----------------------------*/
 
-	/* 十字型マーカーの位置を決める */
-	void decideMarkerPositions() {
-		Vector2D center = new Vector2D(width / 2, height / 2);		// 中心
-		Vector2D circle = new Vector2D(width / 3, height / 3);		// 楕円半径
-		final int markerMax = 3;		// マーカー数
-		final int uncertainty = 30;		// ゆらぎ
+class Human implements Player {
+	Judge judge;
 
-		for (int i = 0; i < markerMax; ++i) {
-			Vector2D diff = new Vector2D(
-				(int)(circle.x() * cos(TWO_PI * i / markerMax - HALF_PI)),
-				(int)(circle.y() * sin(TWO_PI * i / markerMax - HALF_PI))
-			);
-			Vector2D rand = new Vector2D(
-				(int)random(-uncertainty, uncertainty),
-				(int)random(-uncertainty, uncertainty)
-			);
-
-			Vector2D position = center.add(diff).add(rand);
-			markerPositions.add(position);
-		}
-	}
-
-	/* 十字型マーカーを Field に配置する */
-	void locateMarkers() {
-		final int radius = 30;		// マーカーの大きさ
-
-		for (Vector2D markerPosition : markerPositions) {
-			Vector2D left   = markerPosition.add(new Vector2D(-radius, 0));
-			Vector2D right  = markerPosition.add(new Vector2D(radius, 0));
-			Vector2D top    = markerPosition.add(new Vector2D(0, -radius));
-			Vector2D bottom = markerPosition.add(new Vector2D(0, radius));
-
-			field.addVertex(left);
-			field.addVertex(right);
-			field.addVertex(top);
-			field.addVertex(bottom);
-
-			ArrayList<Segment> vertical = new ArrayList<Segment>();
-			ArrayList<Segment> horizontal = new ArrayList<Segment>();
-			vertical.add(new Segment(left, right));
-			horizontal.add(new Segment(top, bottom));
-			field.addCurve(vertical);
-			field.addCurve(horizontal);
-		}
-	}
-
-	/* ゲームの初期化 */
-	void initialize() {
-		decideMarkerPositions();
-		locateMarkers();
+	Human(Judge judge_) {
+		judge = judge_;
 	}
 
 	/* 毎フレーム更新(press, release はこれとは別に割り込みで判定) */
 	void update() {
 		if (mousePressed) {
 			Vector2D mousePosition = new Vector2D(mouseX, mouseY);
-			field.drag(mousePosition);
+			judge.drag(mousePosition);
 		}
-		field.update();
-		collisionDetector.update();
 	}
 
 	/* マウスが押された瞬間 */
 	void mouseIsPressed(Vector2D position) {
-		field.startDrawing(position);
+		judge.startDrawing(position);
 	}
 
-	/* マウスが話された瞬間 */
+	/* マウスが離された瞬間 */
 	void mouseIsReleased(Vector2D position) {
-		field.endDrawing(position);
+		judge.endDrawing(position);
+	}
+}
+
+/*-----------------------------*/
+/*------   GameManager   ------*/
+/*-----------------------------*/
+
+/* ゲームオブジェクトの生成、保持と更新を行う */
+class GameManager {
+	FieldData data;
+	CollisionDetector collisionDetector;
+	Judge judge;
+	Player player;
+
+	GameManager() {
+		data = new FieldData();
+		collisionDetector = new CollisionDetector(data);
+		judge = new Judge(data, collisionDetector);
+
+		Human human = new Human(judge);
+		player = human;
+		humanToReceiveMouseEvent = human;
+	}
+
+	void update() {
+		judge.update();
+		collisionDetector.update();
+		player.update();
 	}
 }
 
@@ -839,18 +870,19 @@ class Printf implements Displayable {
 }
 
 /* GameManager */
-GameManager gameManager = new GameManager();
+GameManager gameManager;
 
 /* static class にできないためにグローバルにおいている変数 */
 Printf printf = new Printf();
 DrawingTools drawingTools = new DrawingTools();
+Human humanToReceiveMouseEvent;		// TODO: とりあえずマウス入力を受け取るためにここに human を置いておきます
 
 void setup() {
 	size(960, 640);
 	colorMode(RGB, 256);		// RGB 256 階調で色設定を与える
 
 	/* 初期化 */
-	gameManager.initialize();
+	gameManager = new GameManager();	// グローバルで初期化すると画面サイズが定まっていないなどの理由で問題があるので、ここで初期化
 	Displayer.add(printf, 100000000);
 }
 
@@ -863,10 +895,10 @@ void draw() {
 
 void mousePressed() {
 	Vector2D mousePosition = new Vector2D(mouseX, mouseY);
-	gameManager.mouseIsPressed(mousePosition);
+	humanToReceiveMouseEvent.mouseIsPressed(mousePosition);
 }
 
 void mouseReleased() {
 	Vector2D mousePosition = new Vector2D(mouseX, mouseY);
-	gameManager.mouseIsReleased(mousePosition);
+	humanToReceiveMouseEvent.mouseIsReleased(mousePosition);
 }
