@@ -61,9 +61,7 @@ class Board{
     }
   }
   
-  int select(int x, int y){
-    x = (x-left) / grid_size;
-    y = (y-left) / grid_size;
+  int _select(int x, int y){
     if(x < 0 || n <= x || y < 0 || m <= y)return 0;
     if(field[x][y] == 0)return 0;
     for(int i = x;i < n;i++){
@@ -72,6 +70,12 @@ class Board{
       }
     }
     return 1;
+  }
+  
+  int select(int x, int y){
+    x = (x-left) / grid_size;
+    y = (y-left) / grid_size;
+    return _select(x, y);
   }
   
   int check_game_over(){
@@ -114,6 +118,70 @@ class Board{
         field[i][j] = 1;
       }
     }
+  }
+  
+  int[][] tryboard(int x, int y){
+    int[][] newfield = new int[n][m];
+    for(int i = 0;i < n;i++){
+      for(int j = 0;j < m;j++){
+        if(field[i][j] == 0)newfield[i][j] = 0;
+        else newfield[i][j] = 1;
+      }
+    }
+    for(int i = x;i < n;i++){
+      for(int j = y;j < n;j++){
+        newfield[i][j] = 0;
+      }
+    }
+    return newfield;
+  }
+  
+  int symmetry(int[][] field){
+    int x = min(n, m);
+    for(int i = 0;i < n;i++){
+      for(int j = 0;j < m;j++){
+        if(i >= x || j >= x){
+          if(field[i][j] == 1)return 0;
+          continue;
+        }
+        if(field[i][j] != field[j][i])return 0;
+      }
+    }
+    return 1;
+  }
+  
+  void AI(){
+    int cnt = 0;
+    for(int i = 0;i < n;i++){
+      for(int j = 0;j < m;j++){
+        if(field[i][j] > 0)cnt++;
+      }
+    }
+    int x = 0, y = 0;
+    for(int i = 0;i < n;i++){
+      for(int j = 0;j < m;j++){
+        if(field[i][j] == 0)continue;
+        int[][] newfield = tryboard(i, j);
+        if(symmetry(newfield) == 1){
+          x = i;
+          y = j;
+        }
+      }
+    }
+    int rand = int(random(cnt));
+    if(x == 0 && y == 0){
+      for(int i = 0;i < n;i++){
+        for(int j = 0;j < m;j++){
+          if(field[i][j] == 0)continue;
+          rand--;
+          if(rand == 0){
+            x = i;
+            y = j;
+          }
+        }
+      }
+    }
+    _select(x,y);
   }
 }
 
