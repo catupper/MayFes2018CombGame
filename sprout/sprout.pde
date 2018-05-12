@@ -2,7 +2,6 @@ import java.util.*;
 
 /* TODO:
  * 終了判定
- * 画面外に出たときの処理
  *
  * 判定がシビア && コーナーケースが多い
  * 新しく作った線分が元ある曲線にぶつかったらどうするの
@@ -637,6 +636,7 @@ class Judge {
 	void initialize() {
 		ArrayList<Vector2D> markerPositions = decideMarkerPositions();
 		locateMarkers(markerPositions);
+		createOuterFrame();
 	}
 
 	/* 十字型マーカーの位置を決める */
@@ -686,6 +686,23 @@ class Judge {
 			addCurve(vertical);
 			addCurve(horizontal);
 		}
+	}
+
+	private void createOuterFrame() {
+		int windowWidth = width;
+		int windowHeight = height;
+		Vector2D leftUp    = new Vector2D(0, 0);
+		Vector2D rightUp   = new Vector2D(windowWidth - 1, 0);
+		Vector2D rightDown = new Vector2D(windowWidth - 1, windowHeight - 1);
+		Vector2D leftDown  = new Vector2D(0, windowHeight - 1);
+
+		ArrayList<Segment> frame = new ArrayList<Segment>();
+		frame.add(new Segment(leftUp, rightUp));
+		frame.add(new Segment(rightUp, rightDown));
+		frame.add(new Segment(rightDown, leftDown));
+		frame.add(new Segment(leftDown, leftUp));
+
+		addCurve(frame);
 	}
 
 	/* 頂点を追加 */
