@@ -361,9 +361,11 @@ class Vertex implements Displayable {
 /* 固定化された曲線 */
 class Curve implements Displayable, Iterable<Segment> {
 	ArrayList<Segment> segments;		// 線分の配列(各線分は接続している)
+	color col;
 
-	Curve(ArrayList<Segment> segments_) {
+	Curve(ArrayList<Segment> segments_, color col_) {
 		segments = segments_;
+		col = col_;
 	}
 
 	/* 折れ線のセグメント数 */
@@ -382,7 +384,7 @@ class Curve implements Displayable, Iterable<Segment> {
 
 	void display() {
 		for (Segment segment : segments) {
-			drawingTools.drawLine(segment);
+			drawingTools.drawLine(segment, col);
 		}
 	}
 }
@@ -396,9 +398,11 @@ class CurveActive implements Displayable, Iterable<Segment> {
 	ArrayList<Segment> segments = new ArrayList<Segment>();
 	Vector2D last;					// 現在終点となっている座標
 	boolean isUpdated = false;		// 線分が追加されたかどうか
+	color col;
 
-	CurveActive(Vector2D start) {
+	CurveActive(Vector2D start, color col_) {
 		last = start;
+		col = col_;
 	}
 
 	Iterator<Segment> iterator() {
@@ -427,8 +431,8 @@ class CurveActive implements Displayable, Iterable<Segment> {
 	}
 
 	/* CurveActive を Curve に変換する(コード内ではこの意味で動詞 'solidify' を使うことにする) */
-	Curve solidify(Vector2D end) {
-		return new Curve(segments);
+	Curve solidify(Vector2D end, color solidifiedCol) {
+		return new Curve(segments, solidifiedCol);
 	}
 
 	Segment getLastSegment() {
@@ -437,7 +441,6 @@ class CurveActive implements Displayable, Iterable<Segment> {
 	}
 
 	void display() {
-		final color col = colorRef(128, 128, 128);
 		for (Segment segment : segments) {
 			drawingTools.drawLine(segment, col);
 		}
@@ -619,9 +622,9 @@ class Judge {
 	Vertex startSelected = null;		// curveActive の始点
 	Vertex endSelected = null;			// curveActive の終点
 
-	final int markerMax = 2;	// マーカー数
+	final int markerMax = 2;					// マーカー数
 	final int turnMax = 5 * markerMax - 2;		// このゲームが結局何ターンで終了してしまうか
-	int turnCount = 0;			// 現在のターン数
+	int turnCount = 0;							// 現在のターン数
 
 	Judge(FieldData data_, CollisionDetector collisionDetector_, GameManager gameManager_) {
 		data = data_;
@@ -693,7 +696,8 @@ class Judge {
 
 	/* 曲線を追加(追加時には交差判定は行われない) */
 	private void addCurve(ArrayList<Segment> segments) {
-		Curve curve = new Curve(segments);
+		final color col = color(0, 0, 0);
+		Curve curve = new Curve(segments, col);
 		data.addCurve(curve);
 	}
 
@@ -708,13 +712,13 @@ class Judge {
 	}
 
 	/* 新しい曲線を描き始める */
-	void startDrawing(Vector2D position) {
+	void startDrawing(Vector2D position, color col) {
 		startSelected = data.fetchVertex(position);		//クリックした場所にある頂点を取ってくる
 		if (startSelected == null) return;
 
 		Vector2D start = startSelected.getPosition();
 
-		curveActive = new CurveActive(start);			// その頂点から直線を引き始める
+		curveActive = new CurveActive(start, col);			// その頂点から直線を引き始める
 		data.setCurveActive(curveActive);
 
 		startSelected.connect();						// 頂点の次数を増やす
@@ -727,7 +731,7 @@ class Judge {
 	}
 
 	/* 直線を描き終える */
-	void endDrawing(Vector2D position) {
+	void endDrawing(Vector2D position, color solidifiedCol) {
 		if (curveActive == null) return;		// そもそも curveActive がないなら終了
 
 		endSelected = data.fetchVertex(position);	// 終点にある頂点を取ってくる
@@ -741,7 +745,7 @@ class Judge {
 			/* 他の曲線と交差していなければ curveActive を solidify する */
 			if (!collisionDetector.collisionExists()) {
 				/* ターン終了! */
-				Curve curve = curveActive.solidify(end);
+				Curve curve = curveActive.solidify(end, solidifiedCol);
 				data.addCurve(curve);
 
 				/* 両端点を接続 */
@@ -750,6 +754,9 @@ class Judge {
 
 				/* 新しいマーカーを作る */
 				createNewMarker(curve.getCenterSegment());
+
+				/* ターン終了を GameManager に伝える */
+				gameManager.informEndOfTurn();
 				++turnCount;
 			}
 		}
@@ -808,8 +815,19 @@ class Human implements Player {
 	TimerForCurve timer;
 	boolean isActive = false;
 
-	Human(Judge judge_) {
+	final GameManager gameManager;		// コールバック用
+	final int playerNum;
+
+	color curveCol;
+	color curveActiveCol;
+
+	Human(Judge judge_, GameManager gameManager_, int playerNum_) {
 		judge = judge_;
+		gameManager = gameManager_;
+		playerNum = playerNum_;
+
+		curveCol = gameManager.getCurveColor(playerNum);
+		curveActiveCol = gameManager.getCurveActiveColor(playerNum);
 	}
 
 	/* 毎フレーム更新(press, release はこれとは別に割り込みで判定) */
@@ -830,7 +848,7 @@ class Human implements Player {
 	/* マウスが押された瞬間 */
 	void mouseIsPressed(Vector2D position) {
 		if (!isActive) return;
-		judge.startDrawing(position);
+		judge.startDrawing(position, curveActiveCol);
 
 		final int interval = 15;	// マウスが累計で interval の長さ動くごとに点を追加する
 		timer = new TimerForCurve(position, interval);
@@ -839,7 +857,7 @@ class Human implements Player {
 	/* マウスが離された瞬間 */
 	void mouseIsReleased(Vector2D position) {
 		if (!isActive) return;
-		judge.endDrawing(position);
+		judge.endDrawing(position, curveCol);
 		timer = null;
 	}
 
@@ -850,7 +868,6 @@ class Human implements Player {
 	void deactivate() {
 		isActive = false;
 	}
-
 }
 
 /*-----------------------------*/
@@ -875,8 +892,8 @@ class GameManager {
 		collisionDetector = new CollisionDetector(data);
 		judge = new Judge(data, collisionDetector, this);
 
-		Human firstHuman = new Human(judge);
-		Human secondHuman = new Human(judge);
+		Human firstHuman = new Human(judge, this, 0);
+		Human secondHuman = new Human(judge, this, 1);
 		first = firstHuman;
 		second = secondHuman;
 		humansToReceiveMouseEvents.add(firstHuman);
@@ -891,8 +908,8 @@ class GameManager {
 
 	void nextTurn() {
 		Player tmp = active;
-		inactive = tmp;
 		active = inactive;
+		inactive = tmp;
 
 		inactive.deactivate();
 		active.activate();
@@ -907,6 +924,16 @@ class GameManager {
 
 	void informEndOfTurn() {
 		nextTurn();
+	}
+
+	color getCurveColor(int playerNum){
+		final color[] colors = {color(255, 0, 0),  color(0, 0, 255)};
+		return colors[playerNum];
+	}
+
+	color getCurveActiveColor(int playerNum){
+		final color[] colors = {color(255, 128, 128),  color(128, 128, 255)};
+		return colors[playerNum];
 	}
 }
 
