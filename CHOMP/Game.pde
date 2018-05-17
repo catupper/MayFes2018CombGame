@@ -3,13 +3,16 @@ class Board{
   int n, m;
   int grid_size;
   int turn;
-  int left, top;  
+  int left, top;
+  int lastx, lasty;
   Board(int _n, int _m, int _l, int _t){
     n = _n;
     m = _m;
     left = _l;
     top = _t;
     grid_size = 30;
+    lastx = -1;
+    lasty = -1;
     field = new int[n][m];
     for(int i = 0;i < n;i++){
       for(int j = 0;j < m;j++){
@@ -34,12 +37,18 @@ class Board{
   }
   
   void drawField(){
+    fill(0,0,0);
     ellipse(left + grid_size / 2, top + grid_size / 2, grid_size, grid_size);
     for(int i = 0;i < n;i++){
       for(int j = 0;j < m;j++){
         draw_grid(left + i * grid_size, top + j * grid_size, field[i][j]);
       }
     }
+    if(lastx != -1){
+      fill(255, 0, 0);
+      ellipse(left + lastx * grid_size + grid_size / 2, top + lasty * grid_size + grid_size / 2, grid_size, grid_size);
+    }
+    
   }
   
   void hover(int x, int y){
@@ -69,6 +78,8 @@ class Board{
         field[i][j] = 0;
       }
     }
+    lastx = x;
+    lasty = y;
     return 1;
   }
   
@@ -88,7 +99,6 @@ class Board{
   }
   
   void draw_turn(){
-    println(turn);
     if(turn == 0){
       fill(0,0,0);
       textSize(50);
@@ -97,7 +107,11 @@ class Board{
     else{
       fill(0,0,0);
       textSize(50);
-      text("My Turn!", 80, 80);
+      text("PC Turn!", 80, 80);
+    }
+    if(lastx != -1){
+      fill(255, 0, 0);
+      text("last move:(" + lastx + ", " + lasty + ")", 500, 80);
     }
   }
 
@@ -105,19 +119,24 @@ class Board{
     fill(0,0,0);
     textSize(50);
     if(turn == 0){
-      text("I Win!", 80, 80);
+      text("PC Win!", 80, 80);
     }
     if(turn == 1){
       text("You Win!", 80, 80);
     }
+    drawField();
+    text("Press Any Key", 80, 500);
   }
   
   void reset(){
+    lastx = -1;
+    lasty = -1;
     for(int i = 0;i < n;i++){
       for(int j = 0;j < m;j++){
         field[i][j] = 1;
       }
     }
+    turn = 0; 
   }
   
   int[][] tryboard(int x, int y){
@@ -129,7 +148,7 @@ class Board{
       }
     }
     for(int i = x;i < n;i++){
-      for(int j = y;j < n;j++){
+      for(int j = y;j < m;j++){
         newfield[i][j] = 0;
       }
     }

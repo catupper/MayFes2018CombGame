@@ -11,8 +11,6 @@ void setup(){
 
 void draw(){
   background(255, 255, 255);
-  println(mode);
-  println("hoge");
   if(mode == 0){
     game.draw_turn();
     game.hover(mouseX, mouseY);
@@ -36,13 +34,14 @@ void draw(){
     game.drawField();
   }
   else if(mode == 2){
-    count--;
-    if(count < 0){
-      count = 0;
-      mode = 0;
-      game.reset();
-    }
     game.game_over();
+  }
+}
+
+void keyPressed(){
+  if(mode == 2){
+    mode = 0;
+    game.reset();
   }
 }
 
