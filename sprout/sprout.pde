@@ -26,133 +26,6 @@ static int colorRef(int r, int g, int b) {
 	return colorRef(r, g, b, 255);
 }
 
-/*-----------------------------*/
-/*------ -  Vector2D   --------*/
-/*-----------------------------*/
-
-/* int 型の2次元ベクトル (immutable) */
-static class Vector2D {
-	final int x;
-	final int y;
-
-	Vector2D(int x_, int y_) {
-		x = x_;
-		y = y_;
-	}
-
-	int x() {
-		return x;
-	}
-
-	int y() {
-		return y;
-	}
-
-	Vector2D add(Vector2D right) {
-		return new Vector2D(x() + right.x(), y() + right.y());
-	}
-
-	Vector2D sub(Vector2D right) {
-		return new Vector2D(x() - right.x(), y() - right.y());
-	}
-
-	Vector2D mul(float scalar) {
-		return new Vector2D((int)(x() * scalar), (int)(y() * scalar));
-	}
-
-	Vector2D div(float scalar) {
-		return new Vector2D((int)(x() / scalar), (int)(y() / scalar));
-	}
-
-	/* 内積 */
-	int dot(Vector2D right) {
-		return x() * right.x() + y() * right.y();
-	}
-
-	/* 外積(2ベクトルで作る平行四辺形の面積) */
-	int cross(Vector2D right) {
-		return x() * right.y() - y() * right.x();
-	}
-
-	/* ノルム2乗 */
-	int norm2() {
-		return this.dot(this);
-	}
-
-	float norm() {
-		return sqrt(norm2());
-	}
-
-	String toString() {
-		return "(" + x + ", " + y + ")";
-	}
-}
-
-/*-----------------------------*/
-/*--------   Segment   --------*/
-/*-----------------------------*/
-
-/* 線分 (immutable) */
-static class Segment {
-	final Vector2D start;
-	final Vector2D end;
-
-	Segment(Vector2D start_, Vector2D end_) {
-		start = start_;
-		end = end_;
-	}
-
-	Vector2D start() {
-		return start;
-	}
-
-	Vector2D end() {
-		return end;
-	}
-
-	String toString() {
-		return "[" + start + " " + end + "]";
-	}
-}
-
-/*-----------------------------*/
-/*------   MathUtility   ------*/
-/*-----------------------------*/
-
-static class MathUtility {
-	/* 競プロでよくあるやつ */
-	static int ccw(Vector2D a, Vector2D b, Vector2D p) {
-		Vector2D ab = b.sub(a);
-		Vector2D ap = p.sub(a);
-		if (ab.cross(ap) > 0) return 1;
-		if (ab.cross(ap) < 0) return -1;
-		if (ab.dot(ap) < 0) return -2;
-		if (ab.norm2() < ap.norm2()) return 2;
-		return 0;
-	}
-
-	/* 2つの線分が交差しているかどうか(端点での衝突は含まない)  */
-	static boolean intersects(Segment a, Segment b) {
-		return ccw(a.start(), a.end(), b.start()) * ccw(a.start(), a.end(), b.end()) < 0
-		    && ccw(b.start(), b.end(), a.start()) * ccw(b.start(), b.end(), a.end()) < 0;
-	}
-
-	/* 2つの直線の交点(なくても無理やり返す); 交点座標は(分数になることもあるが)整数に丸める  */
-	static Vector2D intersectionPoint(Segment a, Segment b) {
-		Vector2D p = a.start();
-		Vector2D q = a.end();
-		Vector2D r = b.start();
-		Vector2D s = b.end();
-
-		Vector2D vec_a = new Vector2D(p.y() - q.y(), r.y() - s.y());
-		Vector2D vec_b = new Vector2D(q.x() - p.x(), s.x() - r.x());
-		Vector2D vec_c = new Vector2D(p.cross(q), r.cross(s));
-		int det = vec_a.cross(vec_b);
-
-		if (det == 0) return p;  	// 2つの直線が平行のとき: 適当に返しておく
-		return new Vector2D(vec_b.cross(vec_c) / det, vec_c.cross(vec_a) / det);
-	}
-}
 
 /*-----------------------------*/
 /*-----   TimerForCurve   -----*/
@@ -172,6 +45,9 @@ static class TimerForCurve {
 
 	/* 毎フレーム呼び出す, 前フレームにおける位置からの距離を加算する */
 	void update(Vector2D position) {
+		if (position == null) {
+			throw new NullPointerException();
+		}
 		sumDistance += prevPosition.sub(position).norm();
 		prevPosition = position;
 	}
@@ -250,6 +126,13 @@ class DrawingTools {
 
 	void drawLine(Segment segment) {
    		drawLine(segment, colorRef(0, 0, 0));
+	}
+
+	void drawLineForDebug(Segment segment) {
+		strokeWeight(1);
+		Vector2D from = segment.start();
+		Vector2D to = segment.end();
+		line(from.x(), from.y(), to.x(), to.y());
 	}
 
 	/* 円を描く */
@@ -342,6 +225,9 @@ class Vertex implements Displayable {
 
 	/* 点 point が頂点の上に(見た目上)存在するか */
 	boolean includes(Vector2D point) {
+		if (point == null) {
+			throw new NullPointerException();
+		}
 		Vector2D diff = position.sub(point);
 		return diff.norm2() <= radius * radius;
 	}
@@ -363,7 +249,7 @@ class Curve implements Displayable, Iterable<Segment> {
 	color col;
 
 	Curve(ArrayList<Segment> segments_, color col_) {
-		segments = segments_;
+		segments = new ArrayList<Segment>(segments_);
 		col = col_;
 	}
 
@@ -373,8 +259,33 @@ class Curve implements Displayable, Iterable<Segment> {
 	}
 
 	/* 曲線中央に位置する線分を取得(新しい頂点を作るための線分); */
- 	Segment getCenterSegment() {
+	Segment getCenterSegment() {
 		return segments.get(segments.size() / 2);
+	}
+
+	class PairOfCurves {
+		public Curve first;
+		public Curve second;
+
+		PairOfCurves(Curve first_, Curve second_) {
+			first = first_;
+			second = second_;
+		}
+	}
+
+	PairOfCurves split() {
+		int half = segments.size() / 2;
+		Segment center = segments.get(half);
+		Vector2D middlePoint = center.start().add(center.end()).div(2);
+
+		ArrayList<Segment> firstArray = new ArrayList<Segment>(segments.subList(0, half));
+		ArrayList<Segment> secondArray = new ArrayList<Segment>(segments.subList(half + 1, segments.size()));
+		firstArray.add(new Segment(center.start(), middlePoint));
+		secondArray.add(0, new Segment(middlePoint, center.end()));
+		Curve first = new Curve(firstArray, col);
+		Curve second = new Curve(secondArray, col);
+		PairOfCurves pair = new PairOfCurves(first, second);
+		return pair;
 	}
 
 	Iterator<Segment> iterator() {
@@ -513,6 +424,10 @@ static class FieldData {
 	ArrayList<Curve> getCurves() {
 		return curves;
 	}
+
+	ArrayList<Vertex> getVertices() {
+		return vertices;
+	}
 }
 
 /*-----------------------------*/
@@ -624,11 +539,13 @@ class Judge {
 	final int markerMax = 2;					// マーカー数
 	final int turnMax = 5 * markerMax - 2;		// このゲームが結局何ターンで終了してしまうか
 	int turnCount = 0;							// 現在のターン数
+	boolean turnEnded = false;						// ターンエンドのフラグ
 
-	Judge(FieldData data_, CollisionDetector collisionDetector_, GameManager gameManager_) {
-		data = data_;
-		collisionDetector = collisionDetector_;
+	Judge(GameManager gameManager_) {
 		gameManager = gameManager_;
+		data = gameManager.getFieldData();
+		collisionDetector = gameManager.getCollisionDetector();
+
 		initialize();
 	}
 
@@ -644,7 +561,7 @@ class Judge {
 		int windowWidth = width;
 		int windowHeight = height;
 		Vector2D center = new Vector2D(windowWidth / 2, windowHeight / 2);		// 中心
-		Vector2D circle = new Vector2D(windowWidth / 3, windowHeight / 3);		// 楕円半径
+		Vector2D circle = new Vector2D(windowWidth / 4, windowHeight / 4);		// 楕円半径
 		final int uncertainty = 30;		// ゆらぎ
 
 		ArrayList<Vector2D> markerPositions = new ArrayList<Vector2D>();
@@ -674,17 +591,17 @@ class Judge {
 			Vector2D top    = markerPosition.add(new Vector2D(0, -radius));
 			Vector2D bottom = markerPosition.add(new Vector2D(0, radius));
 
-			addVertex(left);
-			addVertex(right);
-			addVertex(top);
-			addVertex(bottom);
+			Vector2D endPoints[] = {
+				left, right, top, bottom
+			};
 
-			ArrayList<Segment> vertical = new ArrayList<Segment>();
-			ArrayList<Segment> horizontal = new ArrayList<Segment>();
-			vertical.add(new Segment(left, right));
-			horizontal.add(new Segment(top, bottom));
-			addCurve(vertical);
-			addCurve(horizontal);
+			for (Vector2D endPoint : endPoints) {
+				addVertex(endPoint);
+
+				ArrayList<Segment> segments = new ArrayList<Segment>();
+				segments.add(new Segment(markerPosition, endPoint));
+				addCurve(segments);
+			}
 		}
 	}
 
@@ -723,16 +640,25 @@ class Judge {
 	void update() {
 		data.update();
 
+		if (turnEnded) {
+			/* ターン終了を GameManager に伝える */
+			gameManager.informEndOfTurn();
+			turnEnded = false;
+		}
+
 		if (turnMax == turnCount) {
 			printf.set("The game has finished.");
 		}
 	}
 
-	/* 新しい曲線を描き始める */
+	/* 新しい曲線を描き始める; TODO: Vector2D でなくて vertex にする手もある? */
 	void startDrawing(Vector2D position, color col) {
+		if (position == null) {
+			throw new NullPointerException();
+		}
+
 		startSelected = data.fetchVertex(position);		//クリックした場所にある頂点を取ってくる
 		if (startSelected == null) return;
-
 		Vector2D start = startSelected.getPosition();
 
 		curveActive = new CurveActive(start, col);			// その頂点から直線を引き始める
@@ -749,7 +675,7 @@ class Judge {
 
 	/* 直線を描き終える */
 	void endDrawing(Vector2D position, color solidifiedCol) {
-		if (curveActive == null) return;		// そもそも curveActive がないなら終了
+		if (curveActive == null) return;			// そもそも curveActive がないなら終了
 
 		endSelected = data.fetchVertex(position);	// 終点にある頂点を取ってくる
 		startSelected.disconnect();					// いったん始点の接続を切っておく
@@ -763,7 +689,11 @@ class Judge {
 			if (!collisionDetector.collisionExists()) {
 				/* ターン終了! */
 				Curve curve = curveActive.solidify(end, solidifiedCol);
-				data.addCurve(curve);
+				Curve.PairOfCurves pair = curve.split();		// 曲線を分割する
+				data.addCurve(pair.first);
+				data.addCurve(pair.second);
+				turnEnded = true;
+				++turnCount;
 
 				/* 両端点を接続 */
 				startSelected.connect();
@@ -771,10 +701,6 @@ class Judge {
 
 				/* 新しいマーカーを作る */
 				createNewMarker(curve.getCenterSegment());
-
-				/* ターン終了を GameManager に伝える */
-				gameManager.informEndOfTurn();
-				++turnCount;
 			}
 		}
 
@@ -785,30 +711,58 @@ class Judge {
 		endSelected = null;
 	}
 
-	/* 曲線の1セグメントを受け取り, それに直交するように線を引いて新しいマーカーを作る */
+	/* 曲線の1セグメントを受け取り, それに直交するように線を引いて新しいマーカーを作る;
+	   TODO: 途中のロジックをなんとかする */
 	private void createNewMarker(Segment segment) {
-		final int radius = 20;		// マーカーの大きさ
-
 		Vector2D a = segment.start();
 		Vector2D b = segment.end();
 
 		Vector2D midPoint = a.add(b).div(2);		// 中点
 		Vector2D vector = b.sub(a);					// 線分を有向線分と思ったときのベクトル
 		Vector2D normal = new Vector2D(-vector.y(), vector.x());		// 法線ベクトル
+
+		int radius = 54;		// マーカーの大きさ
+		while (true) {
+			Vector2D tmpModified = normal.mul(radius / normal.norm());
+			Vector2D tmpPointA = midPoint.add(tmpModified);
+			Vector2D tmpPointB = midPoint.sub(tmpModified);
+			Segment tmpSegmentA = new Segment(midPoint, tmpPointA);
+			Segment tmpSegmentB = new Segment(midPoint, tmpPointB);
+			if (canLocate(tmpSegmentA) && canLocate(tmpSegmentB)) break;
+			radius = radius * 2 / 3;
+		}
+
+		/* 実際に新しいマーカーを作る */
+		radius = radius / 2;
 		Vector2D normalModified = normal.mul(radius / normal.norm());	// 長さを調整した法線ベクトル
+		Vector2D pointA = midPoint.add(normalModified);
+		Vector2D pointB = midPoint.sub(normalModified);
+		Segment newSegmentA = new Segment(midPoint, pointA);
+		Segment newSegmentB = new Segment(midPoint, pointB);
 
-		/* 新しい線分の位置を決定 */
-		Vector2D newA = midPoint.add(normalModified);
-		Vector2D newB = midPoint.sub(normalModified);
-		Segment newSegment = new Segment(newA, newB);
-
-		/* 新しいマーカーを作る */
-		addVertex(newA);
-		addVertex(newB);
-		ArrayList<Segment> list = new ArrayList<Segment>();
-		list.add(newSegment);
-		addCurve(list);
+		addVertex(pointA);
+		addVertex(pointB);
+		ArrayList<Segment> listA = new ArrayList<Segment>();
+		ArrayList<Segment> listB = new ArrayList<Segment>();
+		listA.add(newSegmentA);
+		listB.add(newSegmentB);
+		addCurve(listA);
+		addCurve(listB);
 	}
+
+	/* 線分を置けるかどうかチェック; TODO: もっとうまい方法を考える */
+	private boolean canLocate(Segment segment) {
+		for (Curve curve : data.getCurves()) {
+			for (Segment object : curve) {
+				if (MathUtility.intersects(segment, object)) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+
 }
 
 /*-----------------------------*/
@@ -838,11 +792,11 @@ class Human implements Player {
 	color curveCol;
 	color curveActiveCol;
 
-	Human(Judge judge_, GameManager gameManager_, int playerNum_) {
-		judge = judge_;
+	Human(GameManager gameManager_, int playerNum_) {
 		gameManager = gameManager_;
 		playerNum = playerNum_;
 
+		judge = gameManager.getJudge();
 		curveCol = gameManager.getCurveColor(playerNum);
 		curveActiveCol = gameManager.getCurveActiveColor(playerNum);
 	}
@@ -875,6 +829,7 @@ class Human implements Player {
 	void mouseIsReleased(Vector2D position) {
 		if (!isActive) return;
 		judge.endDrawing(position, curveCol);
+
 		timer = null;
 	}
 
@@ -907,14 +862,16 @@ class GameManager {
 	GameManager() {
 		data = new FieldData();
 		collisionDetector = new CollisionDetector(data);
-		judge = new Judge(data, collisionDetector, this);
+		judge = new Judge(this);
 
-		Human firstHuman = new Human(judge, this, 0);
-		Human secondHuman = new Human(judge, this, 1);
+		Human firstHuman = new Human(this, 0);
+		//Human secondHuman = new Human(this, 1);
 		first = firstHuman;
-		second = secondHuman;
+		//second = secondHuman;
 		humansToReceiveMouseEvents.add(firstHuman);
-		humansToReceiveMouseEvents.add(secondHuman);
+		//humansToReceiveMouseEvents.add(secondHuman);
+
+		second = new AiPlayer(this, 1);
 
 		active = first;
 		inactive = second;
@@ -951,6 +908,18 @@ class GameManager {
 	color getCurveActiveColor(int playerNum){
 		final color[] colors = {color(255, 128, 128),  color(128, 128, 255)};
 		return colors[playerNum];
+	}
+
+	FieldData getFieldData() {
+		return data;
+	}
+
+	Judge getJudge() {
+		return judge;
+	}
+
+	CollisionDetector getCollisionDetector() {
+		return collisionDetector;
 	}
 }
 
@@ -997,9 +966,15 @@ void draw() {
 
 	gameManager.update();
 	Displayer.update();
+
+	// for(int i = 0; i < 10; ++i) {
+	// 	drawingTools.drawLine(new Segment(new Vector2D(i * 100, 0), new Vector2D(i * 100, 1000)));
+	// 	drawingTools.drawLine(new Segment(new Vector2D(0, i * 100), new Vector2D(1000, i * 100)));
+	// }
 }
 
 void mousePressed() {
+	if (mouseButton == RIGHT) return;		// 右クリックのときは何もしない
 	Vector2D mousePosition = new Vector2D(mouseX, mouseY);
 	for(Human human : humansToReceiveMouseEvents) {
 		human.mouseIsPressed(mousePosition);
@@ -1007,6 +982,7 @@ void mousePressed() {
 }
 
 void mouseReleased() {
+	if (mouseButton == RIGHT) return;		// 右クリックのときは何もしない
 	Vector2D mousePosition = new Vector2D(mouseX, mouseY);
 	for(Human human : humansToReceiveMouseEvents) {
 		human.mouseIsReleased(mousePosition);
