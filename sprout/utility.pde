@@ -82,7 +82,7 @@ static class Vector2D {
 /*--------   Segment   --------*/
 /*-----------------------------*/
 
-/* 線分 (immutable) */
+/* 有向線分 (immutable) */
 static class Segment {
 	final Vector2D start;
 	final Vector2D end;
@@ -98,6 +98,16 @@ static class Segment {
 
 	Vector2D end() {
 		return end;
+	}
+
+	/* 線分の中点(切り捨て) */
+	Vector2D middlePoint() {
+		return start.add(end).div(2);
+	}
+
+	/* 線分を有向線分と思ったときのベクトル */
+	Vector2D toVector() {
+		return end.sub(start);
 	}
 
 	/* 長さの2乗 */
