@@ -111,22 +111,25 @@ class Triangulation {
 			public int compare(Edge a, Edge b) {
 				Segment segA = a.toSegment();
 				Segment segB = b.toSegment();
-				int lenA = segA.length2();
-				int lenB = segB.length2();
-				if (lenA > lenB) return 1;
-				if (lenA < lenB) return -1;
-				return 0;
+				Rational lenA = segA.length2();
+				Rational lenB = segB.length2();
+				return lenA.compareTo(lenB);
 			}
 		}
 		ComparatorByLength comparatorByLength = new ComparatorByLength();
 		pendingList.sort(comparatorByLength);
+
+
 
 		/* 他の辺と交わらないように辺を追加していく */
 		for (Edge pending : pendingList) {
 			boolean intersects = false;
 			Segment pendingSegment = pending.toSegment();
 
-			for (Edge choosed : choosedList) {
+			//for (Edge choosed : choosedList) {
+			ListIterator<Edge> itr = choosedList.listIterator(choosedList.size());
+			while(itr.hasPrevious()) {
+				Edge choosed = itr.previous();
 				Segment choosedSegment = choosed.toSegment();
 				if (MathUtility.intersects(choosedSegment, pendingSegment)
 					|| pendingSegment.includes(choosedSegment)) {
@@ -172,22 +175,22 @@ class Triangulation {
 			/* TODO: 雑な実装を直す */
 			Integer right = null;
 			Integer left = null;
-			int rightCrossMin = Integer.MAX_VALUE;
-			int leftCrossMax = Integer.MIN_VALUE;
+			Rational rightCrossMin = new Rational(Integer.MAX_VALUE);
+			Rational leftCrossMax = new Rational(Integer.MIN_VALUE);
 			Vector2D a = graph.getVertex(vertexA);
 			Vector2D b = graph.getVertex(vertexB);
 			for (int complement : complements) {
 				Vector2D p = graph.getVertex(complement);
 				Vector2D ab = b.sub(a);
 				Vector2D ap = p.sub(a);
-				int cross = ab.cross(ap);
-				if (cross > 0) {
-					if (cross < rightCrossMin) {
+				Rational cross = ab.cross(ap);
+				if (cross.isPositive()) {
+					if (cross.compareTo(rightCrossMin) < 0) {
 						rightCrossMin = cross;
 						right = complement;
 					}
 				} else {
-					if (cross > leftCrossMax) {
+					if (cross.compareTo(leftCrossMax) > 0) {
 						leftCrossMax = cross;
 						left = complement;
 					}
@@ -326,8 +329,6 @@ static class Dijkstra {
 		path.add(here);
 		Collections.reverse(path);
 
-		//////////System.out.println(previousOf);
-		//////////System.out.println(distanceOf);
 		return path;
 	}
 }
@@ -369,12 +370,19 @@ class AiPlayer implements Player {
 
 		if (frameCount % interval == 0) {
 			if (progress == -1) {
-				judge.startDrawing(result.startPosition, curveActiveCol);
+				/* 始点を選択 */
+				Vertex startVertex = data.fetchVertexExactly(result.startPosition);		// 頂点をとってくる
+				judge.startDrawing(startVertex, curveActiveCol);
+
 			} else if (progress < result.relayPoints.size()) {
+				/* 中継点を置く */
 				Vector2D relayPoint = result.relayPoints.get(progress);
 				judge.putRelayPoint(relayPoint);
+
 			} else if (progress == result.relayPoints.size()) {
-				judge.endDrawing(result.endPosition, curveCol);
+				/* 終点を選択 */
+				Vertex endVertex = data.fetchVertexExactly(result.endPosition);		// 頂点をとってくる
+				judge.endDrawing(endVertex, curveCol);
 			}
 
 			++progress;
@@ -500,10 +508,6 @@ class AiPlayerThread extends Thread {
 
 		GraphWithVertices<Triangulation.Triangle> dualGraph = triangulation.getDualGraph();
 
-		//for (int i = 0; i < dualGraph.size(); ++i) {
-		//	dualGraph.add(i, i);		// 後の便宜上自己ループを追加(そうしないと連結でありながらたどり着けない頂点ができてしまう)
-		//}
-
 		List<Segment> segments = new ArrayList<Segment>();
 		List<List<Integer>> triToSeg = new ArrayList<List<Integer>>(dualGraph.size());
 		for (int i = 0; i < dualGraph.size(); ++i) {
@@ -542,39 +546,44 @@ class AiPlayerThread extends Thread {
 			}
 		}
 
-		/* 頂点を追加: 頂点(始点) → 中点 */
+		/* 頂点を追加: 頂点(始点) → 中点(これらは制約辺に関係ない) */
 		for (int vertexIndex : vertexIndices) {
 			for (int i = 0; i < dualGraph.size(); ++i) {
 				Triangulation.Triangle triangle = dualGraph.getVertex(i);
 
 				boolean isCommon = false;
-				List<Integer> notCommon = new ArrayList<Integer>();
-
 				for (int node : triangle) {
-					if (node == vertexIndex) isCommon = true;
-					if (node != vertexIndex) notCommon.add(node);
+					if (node == vertexIndex) {
+						isCommon = true;
+					}
 				}
 				if (!isCommon) continue;
 
-				Vector2D a = graph.getVertex(notCommon.get(0));
-				Vector2D b = graph.getVertex(notCommon.get(1));
-				Vector2D middlePoint = a.add(b).div(2);
+				for (int nodeA : triangle) {
+					for (int nodeB : triangle) {
+						if (nodeA >= nodeB) continue;
 
-				Segment segmentIn = new Segment(graph.getVertex(vertexIndex), middlePoint);
-				Segment segmentOut = new Segment(middlePoint, graph.getVertex(vertexIndex));
-				segments.add(segmentIn);
-				segments.add(segmentOut);
-				triToSeg.get(i).add(segments.size() - 2);
-				triToSeg.get(i).add(segments.size() - 1);
+						Vector2D a = graph.getVertex(nodeA);
+						Vector2D b = graph.getVertex(nodeB);
+						Vector2D middlePoint = new Segment(a, b).middlePoint();
+
+						Segment segmentIn = new Segment(graph.getVertex(vertexIndex), middlePoint);
+						Segment segmentOut = new Segment(middlePoint, graph.getVertex(vertexIndex));
+						segments.add(segmentIn);
+						segments.add(segmentOut);
+						triToSeg.get(i).add(segments.size() - 2);
+						triToSeg.get(i).add(segments.size() - 1);
+					}
+				}
 			}
 		}
 
-		/* 頂点を追加: 頂点(始点) */
 		edgeSources = new ArrayList<Integer>();
 		edgeSinks = new ArrayList<Integer>();
 		//System.out.println(graph);
 		//System.out.println(vertexIndices);
 
+		/* 頂点を追加: 頂点(始点)のみに対応 */
 		for (int from : vertexIndices) {
 			for (Graph.Element element : graph.getList(from)) {		// 1回しかループしないはず
 				int to = element.to();
@@ -643,23 +652,22 @@ class AiPlayerThread extends Thread {
 
 		List<List<Integer>> paths = new ArrayList<List<Integer>>();
 		for (int from : edgeSources) {
+			List<Integer> sources = new ArrayList<Integer>();
+			List<Integer> sinks = new ArrayList<Integer>();
+
+			sources.add(from);
 			for (int to : edgeSinks) {
 				if (from + 1 == to) continue;		// TODO: 後で直す
-
-				List<Integer> sources = new ArrayList<Integer>();
-				List<Integer> sinks = new ArrayList<Integer>();
-
-				sources.add(from);
 				sinks.add(to);
+			}
 
-				List<Integer> path = dijkstra.execute(sources, sinks);
-				if (!path.isEmpty()) {
-					paths.add(path);
-				}
+			List<Integer> path = dijkstra.execute(sources, sinks);
+			if (!path.isEmpty()) {
+				paths.add(path);
 			}
 		}
 
-		if (paths.isEmpty())  {
+		if (paths.isEmpty()) {
 			throw new IllegalStateException();	// ここには来ないはず
 		}
 
