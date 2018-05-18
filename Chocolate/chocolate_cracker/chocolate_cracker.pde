@@ -25,6 +25,8 @@ void setup()
   size(800,600);
   choconew();
   buttonnew();
+  PFont font = createFont("MS Gothic",48,true);
+textFont(font);
 }
 
 void draw(){
@@ -122,8 +124,24 @@ void linecrick()
 
 void linedraw()
 {
+  if(linemode==0&&turnplayer==0){     
+      fill(255);
+      textSize(24);
+      float x=width/2f;
+      float y=60;
+
+       text("チョコを割る場所を選んでね",x,y);}
+  stroke(255,255,0);
   if(linemode==1){line(xline,max(0,ymin-2*hchoco),xline,min(height,ymax+2*hchoco));}
   if(linemode==2){line(max(0,xmin-2*wchoco),yline,min(width,xmax+2*wchoco),yline);}
+  if(linemode!=0){         fill(255);
+
+       textSize(24);
+
+       float x=width/2f;
+       float y=60;
+
+       text("取り除く方を選んでね",x,y);}
 }
 
 void chococrack()
@@ -144,9 +162,10 @@ void chococrackAI()
 {
  int x=(xmax-xmin)/wchoco;
  int y=(ymax-ymin)/hchoco;
- if(x>y){xline=xmin+(x-y)*wchoco;for(int i=1;i<=Number;i++){if(chocos[i].x<xline){chocos[i].activity=0;}};xmin=xline;xline=0;}
- else if(y>x){yline=ymin+(y-x)*hchoco;for(int i=1;i<=Number;i++){if(chocos[i].y<yline){chocos[i].activity=0;}};ymin=yline;yline=0;}
- else if(y==x){xline=xmin+wchoco;for(int i=1;i<=Number;i++){if(chocos[i].x<xline){chocos[i].activity=0;}};xmin=xline;xline=0;}
+ 
+ if(x>y){xline=xmin+(int)random(1,x)*wchoco;for(int i=1;i<=Number;i++){if(chocos[i].x<xline){chocos[i].activity=0;}};xmin=xline;xline=0;}
+ else if(y>x){yline=ymin+(int)random(1,y)*hchoco;for(int i=1;i<=Number;i++){if(chocos[i].y<yline){chocos[i].activity=0;}};ymin=yline;yline=0;}
+ else if(y==x){xline=xmin+(int)random(1,x)*wchoco;for(int i=1;i<=Number;i++){if(chocos[i].x<xline){chocos[i].activity=0;}};xmin=xline;xline=0;}
 }
 
 void AImove()
@@ -159,7 +178,8 @@ void AImove()
 
        float x=width/2f;
        float y=60;
-       text("AI turn",x,y);
+
+       text("コンピュータの番",x,y);
     if(count>100)
     {
     chococrackAI();
@@ -180,9 +200,9 @@ void GameFinish()
 
        float x=width/2f;
        float y=height/2f;
-       text("Game Finish.",x,y);
-       if(turnplayer==0){text("You Lose",x,y+50);}
-       else{text("You Win!!",x,y+50);}
+       text("ゲーム終了",x,y);
+       if(turnplayer==0){fill(0,0,255);text("あなたの負け",x,y+50);}
+       else{fill(255,0,0);text("あなたの勝ち!!",x,y+50);}
   }
 }
 
