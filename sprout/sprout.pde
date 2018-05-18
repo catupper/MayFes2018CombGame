@@ -12,6 +12,7 @@ static class Constant {
 	static final int initialDepthCurve = 0;
 	static final int initialDepthCurveActive = 1000;
 	static final int initialDepthCollision = 100000;
+	static final int initialDepthTurnSign = 1000000;
 }
 
 static int colorRef(int r, int g, int b, int a) {
@@ -144,6 +145,16 @@ class DrawingTools {
 
 	void drawCircle(Vector2D position, float radius) {
 	   	drawCircle(position, radius, colorRef(0, 0, 0));
+	}
+
+	void drawText(Vector2D position, String string, color col) {
+		fill(col);
+		textSize(32);
+		text(string, position.x(), position.y());
+	}
+
+	void drawText(Vector2D position, String string) {
+		drawText(position, string, colorRef(0, 0, 0));
 	}
 }
 
@@ -644,9 +655,10 @@ class Judge {
 			turnEnded = false;
 		}
 
-		/* 終了処理; TODO: もっとわかりやすく */
+		/* 終了処理; TODO: もっとわかりやすく && 別のところに書こう */
 		if (turnMax == turnCount) {
-			printf.set("The game has finished.");
+			Vector2D position = new Vector2D(width / 2 - 100, 50);
+			drawingTools.drawText(position, "あなたのまけ");
 		}
 	}
 
@@ -847,6 +859,43 @@ class Human implements Player, MouseEventListener {
 }
 
 /*-----------------------------*/
+/*-------   TurnSign   --------*/
+/*-----------------------------*/
+
+/* どっちの手番か示す */
+class TurnSign implements Displayable {
+	final GameManager gameManager;
+
+	int turn = 0;
+
+	TurnSign(GameManager gameManager_) {
+		gameManager = gameManager_;
+	}
+
+	void toggle() {
+		turn = 1 - turn;
+	}
+
+	void display() {
+		color col = gameManager.getCurveColor(turn);
+		Vector2D position = null;
+		String string = null;
+		switch (turn) {
+		case 0:
+			position = new Vector2D(50, 50);
+			string = "あなたのターン";
+			break;
+		case 1:
+			position = new Vector2D(width - 300, 50);
+			string = "あいてのターン";
+			break;
+		}
+
+		drawingTools.drawText(position, string, col);
+	}
+}
+
+/*-----------------------------*/
 /*------   GameManager   ------*/
 /*-----------------------------*/
 
@@ -861,6 +910,7 @@ class GameManager {
 	Player active;			// 現在手番を得ているプレーヤー (first や second と同じ参照を持つ)
 	Player inactive;		// 現在手番でないプレーヤー
 
+	TurnSign turnSign;
 	int turn = 0;			// 何人目のターンか (0-based)
 
 	GameManager() {
@@ -868,6 +918,8 @@ class GameManager {
 		data = new FieldData();
 		collisionDetector = new CollisionDetector(data);
 		judge = new Judge(this);
+		turnSign = new TurnSign(this);
+		Displayer.add(turnSign, Constant.initialDepthTurnSign);
 
 		/* プレイヤー生成 */
 		first = new Human(this, 0);
@@ -890,6 +942,8 @@ class GameManager {
 		/* プレイヤーをアクティブ化/非アクティブ化 */
 		inactive.deactivate();
 		active.activate();
+
+		turnSign.toggle();
 	}
 
 	void update() {
@@ -998,6 +1052,8 @@ DrawingTools drawingTools = new DrawingTools();
 void setup() {
 	size(960, 720);
 	colorMode(RGB, 256);		// RGB 256 階調で色設定を与える
+	PFont font = createFont("MS Gothic", 48, true);
+	textFont(font);
 
 	/* 初期化 */
 	gameManager = new GameManager();	// グローバルで初期化すると画面サイズが定まっていないなどの理由で問題があるので、ここで初期化
