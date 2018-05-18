@@ -1,5 +1,5 @@
 /*-----------------------------*/
-/*------ -  Vector2D   --------*/
+/*--------  Vector2D   --------*/
 /*-----------------------------*/
 
 /* int 型の2次元ベクトル (immutable) */
@@ -228,7 +228,7 @@ static class Graph {
 	List<List<Element>> list;
 
 	Graph() {
-		list = new ArrayList<List<Element>>();
+		this(0);
 	}
 
 	Graph(int size) {
@@ -245,7 +245,7 @@ static class Graph {
 		}
 	}
 
-	private boolean isValidIndex(int index) {
+	protected boolean isValidIndex(int index) {
 		return index >= 0 && index < size();
 	}
 
@@ -271,6 +271,7 @@ static class Graph {
 
 	void resize(int newSize) {
 		if (newSize < size()) throw new IllegalArgumentException();
+
 		for (int i = size(); i < newSize; ++i) {
 			list.add(new ArrayList<Element>());
 		}
@@ -286,5 +287,58 @@ static class Graph {
 			builder.append(" }\n");
 		}
 		return builder.toString();
+	}
+}
+
+/*-----------------------------*/
+/*---------   Graph   ---------*/
+/*-----------------------------*/
+
+static class GraphWithVertices<T> extends Graph {
+	List<T> vertices;
+
+	GraphWithVertices() {
+		this(0);
+	}
+
+	GraphWithVertices(int size) {
+		super(size);
+		vertices = new ArrayList<T>(size);
+	}
+
+	GraphWithVertices(GraphWithVertices other) {
+		super(other);
+		vertices = new ArrayList<T>(other.vertices);
+	}
+
+	GraphWithVertices(List<T> vertices_) {
+		super(vertices_.size());
+		vertices = new ArrayList<T>(vertices_);
+	}
+
+	void setVertex(int index, T vertex) {
+		if (!isValidIndex(index)) throw new IndexOutOfBoundsException();
+
+		vertices.set(index, vertex);
+	}
+
+	T getVertex(int index) {
+		if (!isValidIndex(index)) throw new IndexOutOfBoundsException();
+
+		return vertices.get(index);
+	}
+
+	void addVertex(T vertex) {
+		super.resize(size() + 1);
+		vertices.add(vertex);
+	}
+
+	void resize(int newSize) {
+		int oldSize = size();
+		super.resize(newSize);
+
+		for (int i = oldSize; i < newSize; ++i) {
+			vertices.add(null);
+		}
 	}
 }
