@@ -10,7 +10,7 @@ class Board{
     m = _m;
     left = _l;
     top = _t;
-    grid_size = 30;
+    grid_size = 40;
     lastx = -1;
     lasty = -1;
     field = new int[n][m];
@@ -45,7 +45,8 @@ class Board{
       }
     }
     if(lastx != -1){
-      fill(255, 0, 0);
+      if(turn == 0)fill(255, 0, 0);
+      if(turn == 1)fill(0, 0, 255);
       ellipse(left + lastx * grid_size + grid_size / 2, top + lasty * grid_size + grid_size / 2, grid_size, grid_size);
     }
     
@@ -194,6 +195,37 @@ class Board{
           if(field[i][j] == 0)continue;
           rand--;
           if(rand == 0){
+            x = i;
+            y = j;
+          }
+        }
+      }
+    }
+    _select(x,y);
+  }
+  
+  
+  void AI2(){
+    int val = convertToVal(decreaseDim(field)); 
+    find(val);
+    int x = dpx[val];
+    int y = dpy[val];
+    if(x == -1){
+      int cnt = 0;
+      for(int i = 0;i < 10;i++){
+        for(int j = 0;j < 12;j++){
+          if(field[i][j] > 0)cnt++;
+        }
+      }
+      if(cnt == 1){
+        x = 0;
+        y = 0;
+      }
+      int hoge = (int)random(cnt-1) + 1;
+      for(int i = 0;i < 10;i++){
+        for(int j = 0;j < 12;j++){
+          if(field[i][j] == 0)continue;
+          if(hoge-- == 0){
             x = i;
             y = j;
           }

@@ -7,6 +7,7 @@ void setup(){
   game = new Board(10,12,100, 100);
   mode = 0;
   size(1000, 1000);
+  initDp();
 }
 
 void draw(){
@@ -20,10 +21,9 @@ void draw(){
     game.draw_turn();
     count--;
     if(count < 0){
-      println(count);
       count = 0;
       mode = 0;
-      game.AI();
+      game.AI2();
       if(game.check_game_over() == 1){
         game.game_over();
         mode = 2;
