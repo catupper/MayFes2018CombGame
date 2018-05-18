@@ -19,7 +19,7 @@ class Triangulation {
 		}
 
 		Segment toSegment() {
-			return new Segment(vertices.get(from), vertices.get(to));
+			return new Segment(graph.getVertex(from), graph.getVertex(to));
 		}
 
 		String toString() {
@@ -58,20 +58,17 @@ class Triangulation {
 		}
 	}
 
-	List<Vector2D> vertices;
-	Graph graph;
+	GraphWithVertices<Vector2D> graph;
 	int size;
 
 	List<Edge> choosedList;
 	List<Edge> pendingList;
 
 	Map<Triangle, Integer> indexOfTriangle;
-	List<Triangle> triangles;
-	Graph dual;
+	GraphWithVertices<Triangle> dual;
 
-	Triangulation(List<Vector2D> vertices_, Graph graph_) {
-		vertices = new ArrayList<Vector2D>(vertices_);
-		graph = new Graph(graph_);
+	Triangulation(GraphWithVertices<Vector2D> graph_) {
+		graph = new GraphWithVertices<Vector2D>(graph_);
 		size = graph.size();
 	}
 
@@ -142,14 +139,12 @@ class Triangulation {
 				choosedList.add(pending);
 				graph.add(pending.from(), pending.to());
 				graph.add(pending.to(), pending.from());
-				//new DebugLine(new Segment(vertices.get(pending.from()), vertices.get(pending.to())));
 			}
 		}
 
 		/* 各辺について以下を行う */
 		indexOfTriangle = new HashMap<Triangle, Integer>();
-		triangles = new ArrayList<Triangle>();
-		dual = new Graph();
+		dual = new GraphWithVertices<Triangle>();
 		for (int i = 0; i < choosedList.size(); ++i) {
 			Edge choosed = choosedList.get(i);
 
@@ -183,10 +178,10 @@ class Triangulation {
 			Integer left = null;
 			int rightCrossMin = Integer.MAX_VALUE;
 			int leftCrossMax = Integer.MIN_VALUE;
-			Vector2D a = vertices.get(vertexA);
-			Vector2D b = vertices.get(vertexB);
+			Vector2D a = graph.getVertex(vertexA);
+			Vector2D b = graph.getVertex(vertexB);
 			for (int complement : complements) {
-				Vector2D p = vertices.get(complement);
+				Vector2D p = graph.getVertex(complement);
 				Vector2D ab = b.sub(a);
 				Vector2D ap = p.sub(a);
 				int cross = ab.cross(ap);
@@ -212,10 +207,9 @@ class Triangulation {
 				Triangle triangle = new Triangle(vertexA, vertexB, special);
 				if (indexOfTriangle.containsKey(triangle)) continue;
 
-				triangles.add(triangle);
-				int index = triangles.size() - 1;
-				indexOfTriangle.put(triangle, index);
-				dual.resize(index + 1);
+				int currentSize = dual.size();
+				dual.addVertex(triangle);
+				indexOfTriangle.put(triangle, currentSize);
 			}
 
 			/* 制約辺でなく、かつその辺を使う三角形が2つあるなら、それらの三角形を結ぶ */
@@ -230,16 +224,12 @@ class Triangulation {
 		}
 	}
 
-	Graph getTriangulation() {
+	GraphWithVertices<Vector2D> getTriangulation() {
 		return graph;
 	}
 
-	Graph getDualGraph() {
+	GraphWithVertices<Triangle> getDualGraph() {
 		return dual;
-	}
-
-	List<Triangle> getVerticesOfDualGraph() {
-		return triangles;
 	}
 }
 
@@ -354,19 +344,19 @@ static class Dijkstra {
 /*-----------------------------*/
 
 class AiPlayer implements Player {
-	FieldData data;
-	Judge judge;
+	final GameManager gameManager;		// コールバック用
+	final FieldData data;
+	final Judge judge;
+
+	final int playerNum;
 	boolean isActive = false;
 
-	final GameManager gameManager;		// コールバック用
-	final int playerNum;
-
 	AiPlayerThread thread;
-	AiPlayerThread.Result result;
+	AiPlayerThread.ResultReference result;	// スレッドに参照渡し
 	int progress;
 
-	color curveCol;
-	color curveActiveCol;
+	final color curveCol;
+	final color curveActiveCol;
 
 	AiPlayer(GameManager gameManager_, int playerNum_) {
 		gameManager = gameManager_;
@@ -396,7 +386,7 @@ class AiPlayer implements Player {
 	void activate() {
 		isActive = true;
 		AiPlayerThread tmp = new AiPlayerThread(data, result);
-		result = tmp.new Result();
+		result = tmp.new ResultReference();
 		thread = new AiPlayerThread(data, result);
 		thread.start();
 		progress = -1;
@@ -408,25 +398,30 @@ class AiPlayer implements Player {
 }
 
 class AiPlayerThread extends Thread {
-	class Result {
+	class ResultReference {
 		public Vector2D startPosition;
 		public Vector2D endPosition;
 		public List<Vector2D> relayPoints;
+
+		ResultReference() {}
+		ResultReference(Vector2D startPosition_, Vector2D endPosition_, List<Vector2D> relayPoints_) {
+			startPosition = startPosition_;
+			endPosition = endPosition_;
+			relayPoints = new ArrayList<Vector2D>(relayPoints_);
+		}
 	}
 
-	FieldData data;
-	Result referenceOfResult;
+	final FieldData data;
+	ResultReference reference;		// 参照渡し
 
-	AiPlayerThread(FieldData data_, Result referenceOfResult_) {
+	AiPlayerThread(FieldData data_, ResultReference reference_) {
 		data = data_;
-		referenceOfResult = referenceOfResult_;
+		reference = reference_;
 	}
 
-	List<Vector2D> points;
-	Graph graph;
 	List<Integer> vertexIndices;
 
-	void createGraph() {
+	GraphWithVertices<Vector2D> createGraph() {
 		List<Vertex> vertices = data.getVertices();
 		List<Curve> curves = data.getCurves();
 
@@ -466,7 +461,7 @@ class AiPlayerThread extends Thread {
 			pointToIndex.put(point, 0);
 		}
 
-		points = new ArrayList<Vector2D>();
+		List<Vector2D> points = new ArrayList<Vector2D>();
 		for (Vector2D point : pointToIndex.keySet()) {
 			points.add(point);
 		}
@@ -487,8 +482,7 @@ class AiPlayerThread extends Thread {
 		}
 
 		/* グラフを作成 */
-		int size = points.size();
-		graph = new Graph(size);
+		GraphWithVertices<Vector2D> graph = new GraphWithVertices<Vector2D>(points);
 		for (Curve curve : curves) {
 			for (Segment segment : curve) {
 				int from = pointToIndex.get(segment.start());
@@ -498,51 +492,48 @@ class AiPlayerThread extends Thread {
 				graph.add(to, from);
 			}
 		}
+		return graph;
 	}
 
-	Graph modifiedDualGraph;
-	List<Triangulation.Triangle> triangles;
-	List<Segment> segments;
-	void createDualGraph() {
-		createGraph();
-		Triangulation triangulation = new Triangulation(points, graph);
+	GraphWithVertices<Segment> createDualGraph(GraphWithVertices<Vector2D> graph) {
+		Triangulation triangulation = new Triangulation(graph);
 		triangulation.calculate();
 
-		Graph dualGraph = triangulation.getDualGraph();
-		triangles = triangulation.getVerticesOfDualGraph();
+		GraphWithVertices<Triangulation.Triangle> dualGraph = triangulation.getDualGraph();
 
+		//for (int i = 0; i < dualGraph.size(); ++i) {
+		//	dualGraph.add(i, i);		// 後の便宜上自己ループを追加(そうしないと連結でありながらたどり着けない頂点ができてしまう)
+		//}
+
+		List<Segment> segments = new ArrayList<Segment>();
+		List<List<Integer>> triToSeg = new ArrayList<List<Integer>>(dualGraph.size());
 		for (int i = 0; i < dualGraph.size(); ++i) {
-			dualGraph.add(i, i);		// 後の便宜上自己ループを追加(そうしないと連結でありながらたどり着けない頂点ができてしまう)
-		}
-
-		segments = new ArrayList<Segment>();
-		List<List<Integer>> triToSeg = new ArrayList<List<Integer>>(triangles.size());
-		for (int i = 0; i < triangles.size(); ++i) {
 			triToSeg.add(new ArrayList<Integer>());
 		}
 
-		for (int i = 0; i < triangles.size(); ++i) {
-			Triangulation.Triangle triangle = triangles.get(i);
+		for (int p = 0; p < dualGraph.size(); ++p) {
+			Triangulation.Triangle triangle = dualGraph.getVertex(p);
+
 			Vector2D[] middlePoints = new Vector2D[3];
  			for (int k = 0; k < 3; ++k) {
-				Vector2D a = points.get(triangle.get(k));
-				Vector2D b = points.get(triangle.get((k + 1) % 3));
+				Vector2D a = graph.getVertex(triangle.get(k));
+				Vector2D b = graph.getVertex(triangle.get((k + 1) % 3));
 				middlePoints[k] = a.add(b).div(2);
 			}
 
-			for (int k = 0; k < 3; ++k) {
-				for (int p = 0; p < 3; ++p) {
-					if (k == p) continue;
-					Segment segment = new Segment(middlePoints[k], middlePoints[p]);
+			for (int i = 0; i < 3; ++i) {
+				for (int j = 0; j < 3; ++j) {
+					if (i == j) continue;
+					Segment segment = new Segment(middlePoints[i], middlePoints[j]);
 					segments.add(segment);
-					triToSeg.get(i).add(segments.size() - 1);
+					triToSeg.get(p).add(segments.size() - 1);
 				}
 			}
 		}
 
 		for (int vertexIndex : vertexIndices) {
-			for (int i = 0; i < triangles.size(); ++i) {
-				Triangulation.Triangle triangle = triangles.get(i);
+			for (int i = 0; i < dualGraph.size(); ++i) {
+				Triangulation.Triangle triangle = dualGraph.getVertex(i);
 				boolean isCommon = false;
 				for (int k = 0; k < 3; ++k) {
 					if (triangle.get(k) == vertexIndex) {
@@ -558,12 +549,12 @@ class AiPlayerThread extends Thread {
 					}
 				}
 
-				Vector2D a = points.get(notCommon.get(0));
-				Vector2D b = points.get(notCommon.get(1));
+				Vector2D a = graph.getVertex(notCommon.get(0));
+				Vector2D b = graph.getVertex(notCommon.get(1));
 				Vector2D middlePoint = a.add(b).div(2);
 
-				Segment segmentIn = new Segment(points.get(vertexIndex), middlePoint);
-				Segment segmentOut = new Segment(middlePoint, points.get(vertexIndex));
+				Segment segmentIn = new Segment(graph.getVertex(vertexIndex), middlePoint);
+				Segment segmentOut = new Segment(middlePoint, graph.getVertex(vertexIndex));
 				segments.add(segmentIn);
 				segments.add(segmentOut);
 				triToSeg.get(i).add(segments.size() - 2);
@@ -572,7 +563,7 @@ class AiPlayerThread extends Thread {
 		}
 
 		/* 線分を結んだグラフを作る */
-		modifiedDualGraph = new Graph(segments.size());
+		GraphWithVertices<Segment> edgeGraph = new GraphWithVertices<Segment>(segments);
 		for (int from = 0; from < dualGraph.size(); ++from) {
 			Iterator<Graph.Element> itr = dualGraph.getIterator(from);
 			while (itr.hasNext()) {
@@ -586,30 +577,28 @@ class AiPlayerThread extends Thread {
 
 						if (a.end().equals(b.start())) {
 							double curvature = MathUtility.angle(a.start(), a.end(), b.end()) - PI;
-							modifiedDualGraph.add(s, t, (int)(1000 * curvature * curvature));
+							edgeGraph.add(s, t, (int)(1000 * curvature * curvature));
 						}
 					}
 				}
 			}
 		}
+		return edgeGraph;
 	}
 
-
-	void run() {
-		createDualGraph();
-
-		//////System.out.println(modifiedDualGraph);
-
-		Dijkstra dijkstra = new Dijkstra(modifiedDualGraph);
+	ResultReference calculate() {
+		GraphWithVertices<Vector2D> graph = createGraph();
+		GraphWithVertices<Segment> edgeGraph = createDualGraph(graph);
+		Dijkstra dijkstra = new Dijkstra(edgeGraph);
 
 		List<List<Integer>> paths = new ArrayList<List<Integer>>();
 		for (int vertexIndex : vertexIndices) {
 			List<Integer> sources = new ArrayList<Integer>();
 			List<Integer> sinks = new ArrayList<Integer>();
 
-			Vector2D vertexPoint = points.get(vertexIndex);
-			for (int i = 0; i < segments.size(); ++i) {
-				Segment segment = segments.get(i);
+			Vector2D vertexPoint = graph.getVertex(vertexIndex);
+			for (int i = 0; i < edgeGraph.size(); ++i) {
+				Segment segment = edgeGraph.getVertex(i);
 				if (segment.start().equals(vertexPoint)) {
 					sources.add(i);
 				}
@@ -618,7 +607,7 @@ class AiPlayerThread extends Thread {
 				for (int other : vertexIndices) {
 					if (other == vertexIndex) continue;
 
-					Vector2D otherPoint = points.get(other);
+					Vector2D otherPoint = graph.getVertex(other);
 					if (segment.end().equals(otherPoint)) {
 						isSink = true;
 					}
@@ -629,19 +618,12 @@ class AiPlayerThread extends Thread {
 
 			}
 
-			//System.out.println(sources);
-			//System.out.println(sinks);
-
 			List<Integer> path = dijkstra.execute(sources, sinks);
 			if (!path.isEmpty()) {
 				paths.add(path);
 			}
 		}
 
-
-		////System.out.println(sources);
-		////System.out.println(sinks);
-		////System.out.println(path);
 		if (paths.isEmpty())  {
 			throw new IllegalStateException();	// ここには来ないはず
 		}
@@ -649,15 +631,21 @@ class AiPlayerThread extends Thread {
 		Collections.shuffle(paths);
 		List<Integer> path = paths.get(0);
 
-		Vector2D startPosition = segments.get(path.get(0)).start();
-		Vector2D endPosition = segments.get(path.get(path.size() - 1)).end();
+		Vector2D startPosition = edgeGraph.getVertex(path.get(0)).start();
+		Vector2D endPosition = edgeGraph.getVertex(path.get(path.size() - 1)).end();
 		List<Vector2D> relayPoints = new ArrayList<Vector2D>();
 		for (int i = 1; i < path.size(); ++i) {
-			relayPoints.add(segments.get(path.get(i)).start());
+			relayPoints.add(edgeGraph.getVertex(path.get(i)).start());
 		}
 
-		referenceOfResult.startPosition = startPosition;
-		referenceOfResult.endPosition = endPosition;
-		referenceOfResult.relayPoints = relayPoints;
+		ResultReference result = new ResultReference(startPosition, endPosition, relayPoints);
+		return result;
+	}
+
+	void run() {
+		ResultReference result = calculate();
+		reference.startPosition = result.startPosition;
+		reference.endPosition = result.endPosition;
+		reference.relayPoints = result.relayPoints;
 	}
 }
