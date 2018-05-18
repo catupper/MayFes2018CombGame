@@ -225,6 +225,18 @@ static class Graph {
 		}
 	}
 
+	class ListReference implements Iterable<Element> {
+		int from;
+
+		ListReference(int from_) {
+			from = from_;
+		}
+
+		Iterator<Element> iterator() {
+			return list.get(from).iterator();
+		}
+	}
+
 	List<List<Element>> list;
 
 	Graph() {
@@ -261,8 +273,8 @@ static class Graph {
 		add(from, to, 1);
 	}
 
-	Iterator<Element> getIterator(int from) {
-		return list.get(from).iterator();
+	ListReference getList(int from) {
+		return new ListReference(from);
 	}
 
 	int size() {
