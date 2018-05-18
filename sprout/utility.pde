@@ -255,7 +255,7 @@ static class MathUtility {
 			&& ccw(b.start(), b.end(), a.start()) * ccw(b.start(), b.end(), a.end()) <= 0;
 	}
 
-	/* 2つの直線の交点(なくても無理やり返す); 交点座標は(分数になることもあるが)整数に丸める  */
+	/* 2つの直線の交点(なくても無理やり返す) */
 	static Vector2D intersectionPoint(Segment a, Segment b) {
 		Vector2D p = a.start();
 		Vector2D q = a.end();
