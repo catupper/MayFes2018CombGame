@@ -1,63 +1,162 @@
+import java.math.BigInteger;
+
+/*-----------------------------*/
+/*--------  Rational   --------*/
+/*-----------------------------*/
+
+static class Rational implements Comparable<Rational> {
+	final BigInteger numer;
+	final BigInteger denom;
+
+	static final Rational ZERO = new Rational(0);
+
+	Rational(int integer) {
+		this(integer, 1);
+	}
+
+	Rational(int numer_, int denom_) {
+		this(BigInteger.valueOf(numer_), BigInteger.valueOf(denom_));
+	}
+
+	Rational(BigInteger numer_, BigInteger denom_) {
+		if (denom_.equals(BigInteger.ZERO)) {
+			throw new ArithmeticException();
+		}
+
+		BigInteger gcd = numer_.gcd(denom_);
+
+		if (denom_.signum() == gcd.signum()) {
+			numer = numer_.divide(gcd);
+			denom = denom_.divide(gcd);
+		} else {
+			numer = numer_.divide(gcd).negate();
+			denom = denom_.divide(gcd).negate();
+		}
+	}
+
+	Rational negate() {
+		return new Rational(numer.negate(), denom);
+	}
+
+	Rational add(Rational right) {
+		return new Rational(
+			numer.multiply(right.denom).add(right.numer.multiply(denom)),
+			denom.multiply(right.denom)
+		);
+	}
+
+	Rational sub(Rational right) {
+		return add(right.negate());
+	}
+
+	Rational mul(Rational right) {
+		return new Rational(numer.multiply(right.numer), denom.multiply(right.denom));
+	}
+
+	Rational div(Rational right) {
+		return new Rational(numer.multiply(right.denom), denom.multiply(right.numer));
+	}
+
+	double toDouble() {
+		return numer.doubleValue() / denom.doubleValue();
+	}
+
+	String toString() {
+		return numer + " / " + denom;
+	}
+
+	boolean isPositive() {
+		return compareTo(ZERO) > 0;
+	}
+
+	boolean isNegative() {
+		return compareTo(ZERO) < 0;
+	}
+
+	boolean isZero() {
+		return compareTo(ZERO) == 0;
+	}
+
+	int compareTo(Rational other) {
+		return numer.multiply(other.denom).compareTo(denom.multiply(other.numer));
+	}
+
+	boolean equals(Object obj) {
+		if (!(obj instanceof Rational)) return false;
+
+		Rational other = (Rational)obj;
+		return numer.equals(other.numer) && denom.equals(other.denom);
+	}
+
+	int hashCode() {
+		return Objects.hash(numer, denom);
+	}
+}
+
 /*-----------------------------*/
 /*--------  Vector2D   --------*/
 /*-----------------------------*/
 
-/* int 型の2次元ベクトル (immutable) */
+/* Rational 型の2次元ベクトル (immutable) */
 static class Vector2D {
-	final int x;
-	final int y;
+	final Rational x;
+	final Rational y;
 
 	Vector2D(int x_, int y_) {
+		this(new Rational(x_), new Rational(y_));
+	}
+
+	Vector2D(Rational x_, Rational y_) {
 		x = x_;
 		y = y_;
 	}
 
-	int x() {
+	Rational x() {
 		return x;
 	}
 
-	int y() {
+	Rational y() {
 		return y;
 	}
 
 	Vector2D add(Vector2D right) {
-		return new Vector2D(x() + right.x(), y() + right.y());
+		return new Vector2D(x().add(right.x()), y().add(right.y()));
 	}
 
 	Vector2D sub(Vector2D right) {
-		return new Vector2D(x() - right.x(), y() - right.y());
+		return new Vector2D(x().sub(right.x()), y().sub(right.y()));
 	}
 
-	Vector2D mul(float scalar) {
-		return new Vector2D((int)(x() * scalar), (int)(y() * scalar));
+	Vector2D mul(Rational scalar) {
+		return new Vector2D(x().mul(scalar), y().mul(scalar));
 	}
 
-	Vector2D div(float scalar) {
-		return new Vector2D((int)(x() / scalar), (int)(y() / scalar));
+	Vector2D div(Rational scalar) {
+		return new Vector2D(x().div(scalar), y().div(scalar));
 	}
 
 	/* 内積 */
-	int dot(Vector2D right) {
-		return x() * right.x() + y() * right.y();
+	Rational dot(Vector2D right) {
+		return x().mul(right.x()).add(y().mul(right.y()));
 	}
 
 	/* 外積(2ベクトルで作る平行四辺形の面積) */
-	int cross(Vector2D right) {
-		return x() * right.y() - y() * right.x();
+	Rational cross(Vector2D right) {
+		return x().mul(right.y()).sub(y().mul(right.x()));
 	}
 
 	/* ノルム2乗 */
-	int norm2() {
+	Rational norm2() {
 		return this.dot(this);
 	}
 
-	float norm() {
-		return sqrt(norm2());
+	double norm() {
+		return Math.sqrt(norm2().toDouble());
 	}
 
 	/* 偏角 */
 	double arg() {
-		double arg = atan2(y, x);
+		double arg = Math.atan2(y.toDouble(), x.toDouble());
 		if (arg < 0) arg += TWO_PI;
 		return arg;
 	}
@@ -66,7 +165,7 @@ static class Vector2D {
 		if (!(obj instanceof Vector2D)) return false;
 
 		Vector2D other = (Vector2D)obj;
-		return x == other.x && y == other.y;
+		return x.equals(other.x) && y.equals(other.y);
 	}
 
 	int hashCode() {
@@ -102,7 +201,7 @@ static class Segment {
 
 	/* 線分の中点(切り捨て) */
 	Vector2D middlePoint() {
-		return start.add(end).div(2);
+		return start.add(end).div(new Rational(2));
 	}
 
 	/* 線分を有向線分と思ったときのベクトル */
@@ -111,7 +210,7 @@ static class Segment {
 	}
 
 	/* 長さの2乗 */
-	int length2() {
+	Rational length2() {
 		return end.sub(start).norm2();
 	}
 
@@ -137,10 +236,10 @@ static class MathUtility {
 	static int ccw(Vector2D a, Vector2D b, Vector2D p) {
 		Vector2D ab = b.sub(a);
 		Vector2D ap = p.sub(a);
-		if (ab.cross(ap) > 0) return 1;
-		if (ab.cross(ap) < 0) return -1;
-		if (ab.dot(ap) < 0) return -2;
-		if (ab.norm2() < ap.norm2()) return 2;
+		if (ab.cross(ap).isPositive()) return 1;
+		if (ab.cross(ap).isNegative()) return -1;
+		if (ab.dot(ap).isNegative()) return -2;
+		if (ab.norm2().compareTo(ap.norm2()) < 0) return 2;
 		return 0;
 	}
 
@@ -150,6 +249,12 @@ static class MathUtility {
 			&& ccw(b.start(), b.end(), a.start()) * ccw(b.start(), b.end(), a.end()) < 0;
 	}
 
+	/* 2つの線分が交差しているかどうか(端点での衝突を含む)  */
+	static boolean intersectsStrictly(Segment a, Segment b) {
+		return ccw(a.start(), a.end(), b.start()) * ccw(a.start(), a.end(), b.end()) <= 0
+			&& ccw(b.start(), b.end(), a.start()) * ccw(b.start(), b.end(), a.end()) <= 0;
+	}
+
 	/* 2つの直線の交点(なくても無理やり返す); 交点座標は(分数になることもあるが)整数に丸める  */
 	static Vector2D intersectionPoint(Segment a, Segment b) {
 		Vector2D p = a.start();
@@ -157,13 +262,13 @@ static class MathUtility {
 		Vector2D r = b.start();
 		Vector2D s = b.end();
 
-		Vector2D vec_a = new Vector2D(p.y() - q.y(), r.y() - s.y());
-		Vector2D vec_b = new Vector2D(q.x() - p.x(), s.x() - r.x());
+		Vector2D vec_a = new Vector2D(p.y().sub(q.y()), r.y().sub(s.y()));
+		Vector2D vec_b = new Vector2D(q.x().sub(p.x()), s.x().sub(r.x()));
 		Vector2D vec_c = new Vector2D(p.cross(q), r.cross(s));
-		int det = vec_a.cross(vec_b);
+		Rational det = vec_a.cross(vec_b);
 
-		if (det == 0) return p;  	// 2つの直線が平行のとき: 適当に返しておく
-		return new Vector2D(vec_b.cross(vec_c) / det, vec_c.cross(vec_a) / det);
+		if (det.isZero()) return new Segment(p, q).middlePoint();  	// 2つの直線が平行のとき: 適当に中点を返しておく
+		return new Vector2D(vec_b.cross(vec_c), vec_c.cross(vec_a)).div(det);
 	}
 
 	/* from → center → to と進む折れ線のなす角; [0, 2PI) */
