@@ -98,11 +98,11 @@ class Triangulation {
 		final int numOfOriginalEdges = choosedList.size();
 
 		/* 残りの辺を長さでソート */
-		List<Edge> tmpPendingList = new ArrayList<Edge>();
+		pendingList = new ArrayList<Edge>();
 		for (int i = 0; i < size; ++i) {
 			for (int j = i + 1; j < size; ++j) {
 				if (needed[i][j]) {
-					tmpPendingList.add(new Edge(i, j));
+					pendingList.add(new Edge(i, j));
 				}
 			}
 		}
@@ -117,54 +117,9 @@ class Triangulation {
 			}
 		}
 		ComparatorByLength comparatorByLength = new ComparatorByLength();
-
-		/* 枝刈り */
-		final int H = 20;
-		final int W = 20;
-		int blockSize = 60;
-		List<Edge>[][] sieve = new List[H][W];
-		for (int i = 0; i < H; ++i) {
-			for (int j = 0; j < W; ++j) {
-				sieve[i][j] = new ArrayList<Edge>();
-			}
-		}
-
-		for (Edge pending : tmpPendingList) {
-			Vector2D v = pending.toSegment().middlePoint();
-			int i = (int)(v.x().toDouble()) / blockSize;
-			int j = (int)(v.y().toDouble()) / blockSize;
-			sieve[i][j].add(pending);
-		}
-		for (int i = 0; i < H; ++i) {
-			for (int j = 0; j < W; ++j) {
-				sieve[i][j].sort(comparatorByLength);
-				for (int s = 0; s < sieve[i][j].size(); ++s) {
-					Edge edge = sieve[i][j].get(s);
-					Segment subject = edge.toSegment();
-
-					Iterator<Edge> itr = sieve[i][j].listIterator(s + 1);
-					while (itr.hasNext()) {
-						Edge target = itr.next();
-						Segment object = target.toSegment();
-
-						if (MathUtility.intersects(subject, object)
-							|| object.includes(subject)) {
-							/* 交差している */
-							itr.remove();
-						}
-					}
-				}
-			}
-		}
-		pendingList = new ArrayList<Edge>();
-		for (int i = 0; i < H; ++i) {
-			for (int j = 0; j < W; ++j) {
-				for (Edge edge : sieve[i][j]) {
-					pendingList.add(edge);
-				}
-			}
-		}
 		pendingList.sort(comparatorByLength);
+
+
 
 		/* 他の辺と交わらないように辺を追加していく */
 		for (Edge pending : pendingList) {
@@ -495,9 +450,7 @@ class ThinkingSign implements Displayable {
 
 		drawingTools.drawText(offset, "かんがえちゅう…", colorRef(64, 64, 64));
 	}
-
 }
-
 
 class AiPlayerThread extends Thread {
 	class ResultReference {
