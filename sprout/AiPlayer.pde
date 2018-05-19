@@ -352,6 +352,8 @@ class AiPlayer implements Player {
 	final color curveCol;
 	final color curveActiveCol;
 
+	ThinkingSign thinkingSign;
+
 	AiPlayer(GameManager gameManager_, int playerNum_) {
 		gameManager = gameManager_;
 		playerNum = playerNum_;
@@ -366,8 +368,14 @@ class AiPlayer implements Player {
 		final int interval = 3;
 
 		if (!isActive) return;
-		if (thread == null || thread.isAlive()) return;
+		if (thread == null) return;
+		if (thread.isAlive()) {
+			thinkingSign.update();
+			return;
+		}
 
+		Displayer.remove(thinkingSign);
+		thinkingSign = null;
 		if (frameCount % interval == 0) {
 			if (progress == -1) {
 				/* 始点を選択 */
@@ -395,6 +403,10 @@ class AiPlayer implements Player {
 		result = tmp.new ResultReference();
 		thread = new AiPlayerThread(data, result);
 		thread.start();
+
+		thinkingSign = new ThinkingSign();
+		Displayer.add(thinkingSign, 7000000);
+
 		progress = -1;
 	}
 
@@ -402,6 +414,45 @@ class AiPlayer implements Player {
 		isActive = false;
 	}
 }
+
+/*-----------------------------*/
+/*------   ThinkingSign   -----*/
+/*-----------------------------*/
+
+/* かんがえちゅう */
+class ThinkingSign implements Displayable {
+	int frame = 0;
+
+	void update() {
+		++frame;
+	}
+
+	void display() {
+		final Vector2D offset = new Vector2D(960 / 2, 150);
+		final int radius = 50;
+		final int numberOfcircles = 10;
+		for (int i = 0; i < numberOfcircles; ++i) {
+			final int circleRadius = 8;
+			Vector2D position = new Vector2D(
+				(int)(radius * Math.cos(TWO_PI * i / numberOfcircles)),
+				(int)(radius * Math.sin(TWO_PI * i / numberOfcircles))
+			);
+
+			color col;
+			if ((frame / 5) % numberOfcircles == i) {
+				col = colorRef(192, 192, 192);
+			} else {
+				col = colorRef(224, 224, 224);
+			}
+
+			drawingTools.drawCircle(offset.add(position), circleRadius, col);
+		}
+
+		drawingTools.drawText(offset, "かんがえちゅう…", colorRef(64, 64, 64));
+	}
+
+}
+
 
 class AiPlayerThread extends Thread {
 	class ResultReference {
